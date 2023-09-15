@@ -33,7 +33,7 @@ const char *ssid = "*";                                        // SSID WiFi netw
 const char *pass = "*";                                        // Password  WiFi network
 const char *token = "*";  // Telegram token
 const char *channel = "*";
-int64_t userid = ***;
+int64_t userid = *;
 
 String resultRegistrator;
 String resultKGY;
@@ -180,10 +180,16 @@ void regulatePower() {
   static uint32_t powerUpTime = millis();
   static uint32_t lastRegulate = millis();
 
+  if(trottlePosition > 100 || trottlePosition < 0 ||  powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -200 || opPr > 40 || opPr < -5) {
+      myBot.sendTo(userid, "trottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + 
+      "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr));
+      return;
+  }
+
   if (powerActive > 0 && opPr < 9000 && millis() - lastRegulate > 20000) {
     (opPr > 6 && powerActive < 1350) ? reg = 20 : reg = 10;
     if (opPr < 3) {
-      powerConstant > 1000 ? setPower(powerConstant - 100) : setPower(900);
+      (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
       lastRegulate = millis();
       blink();
     } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower) {
@@ -204,7 +210,7 @@ void regulatePower() {
   } else if (powerActive <= 0 && powerConstant != 800) {
     setPower(800);
     maxPower = 800;
-    //myBot.sendToChannel(channel, "КГУ остановленно!! \n Так и задуманно?", true);
+    myBot.sendToChannel(channel, "КГУ остановленно!! \n Так и задумано?", true);
     blink();
   }
 }
