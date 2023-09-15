@@ -29,11 +29,11 @@ AsyncClient clientRegistrator;
 AsyncClient clientKGY;
 
 
-const char *ssid = "*";                                        // SSID WiFi network
-const char *pass = "*";                                        // Password  WiFi network
-const char *token = "*";  // Telegram token
-const char *channel = "*";
-int64_t userid = *;
+const char *ssid = "***";                                        // SSID WiFi network
+const char *pass = "***";                                        // Password  WiFi network
+const char *token = "***";  // Telegram token
+const char *channel = "***";
+int64_t userid = ***;
 
 String resultRegistrator;
 String resultKGY;
@@ -44,7 +44,6 @@ uint16_t trottlePosition = 9999;
 uint16_t powerConstant = 9999;
 float opPr = 9999;
 int maxPower = 1560;
-String opPressure = String(9999);
 int reg = 10;
 
 int hours;
@@ -53,6 +52,7 @@ bool hourReport = false;
 bool regulate = false;
 bool alarm = false;
 bool alarmMsg = false;
+bool skipFirst = false;
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -85,11 +85,6 @@ void setup() {
   // Send a message to specific user who has started your bot
   myBot.sendTo(userid, welcome_msg);
 
-  hours = (ntpClient.getUnixTime() / 3600) % 24;
-  currentHour = hours;
-
-  //regulateTime = millis();
-
   digitalWrite(LED_BUILTIN, true);
 }
 
@@ -111,9 +106,11 @@ void loop() {
   }
 
   TBMessage msg;
-  if (myBot.getNewMessage(msg) || (((currentHour - hours) >= 1) || ((currentHour - hours) < 0)) && hourReport) {
+  if (myBot.getNewMessage(msg) || (((currentHour - hours) == 1) || ((currentHour - hours) < -23)) && hourReport) {
     blink();
     if (msg.text == "/report_enable@KGY_operator_bot" || msg.text == "/report_enable") {
+      hours = (ntpClient.getUnixTime() / 3600) % 24;
+      currentHour = hours;
       blink();
       hourReport = true;
       myBot.sendToChannel(channel, "Опция отчетности включена", true);
@@ -129,7 +126,7 @@ void loop() {
       blink();
       regulate = false;
       myBot.sendToChannel(channel, "Опция регулирования отключена", true);
-    } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || (((currentHour - hours) >= 1) || ((currentHour - hours) < 0)) && hourReport) {
+    } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || (((currentHour - hours) == 1) || ((currentHour - hours) < -23)) && hourReport) {
       digitalWrite(LED_BUILTIN, false);
       if (!regulate) {
         getDate();
@@ -181,12 +178,15 @@ void regulatePower() {
   static uint32_t lastRegulate = millis();
 
   if(trottlePosition > 100 || trottlePosition < 0 ||  powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -200 || opPr > 40 || opPr < -5) {
-      myBot.sendTo(userid, "trottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + 
+      if(skipFirst){
+        myBot.sendTo(userid, "trottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + 
       "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr));
+      }
+      skipFirst = true;
       return;
   }
 
-  if (powerActive > 0 && opPr < 9000 && millis() - lastRegulate > 20000) {
+  if (powerActive > 0 && millis() - lastRegulate > 20000) {
     (opPr > 6 && powerActive < 1350) ? reg = 20 : reg = 10;
     if (opPr < 3) {
       (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
