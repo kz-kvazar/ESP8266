@@ -4,6 +4,7 @@
 // Timezone definition
 #include <time.h>
 #define MYTZ "EET-2EEST,M3.5.0,M10.5.0/3"
+
 #include <EasyNTPClient.h>
 #include <WiFiUdp.h>
 #include <ESP8266WiFi.h>
@@ -106,7 +107,7 @@ void loop() {
   }
 
   TBMessage msg;
-  if (myBot.getNewMessage(msg) || (((currentHour - hours) == 1) || ((currentHour - hours) < -23)) && hourReport) {
+  if (myBot.getNewMessage(msg) || (((currentHour - hours) == 1) || ((currentHour - hours) == -23)) && hourReport) {
     blink();
     if (msg.text == "/report_enable@KGY_operator_bot" || msg.text == "/report_enable") {
       hours = (ntpClient.getUnixTime() / 3600) % 24;
@@ -126,7 +127,7 @@ void loop() {
       blink();
       regulate = false;
       myBot.sendToChannel(channel, "Опция регулирования отключена", true);
-    } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || (((currentHour - hours) == 1) || ((currentHour - hours) < -23)) && hourReport) {
+    } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || (((currentHour - hours) == 1) || ((currentHour - hours) == -23)) && hourReport) {
       digitalWrite(LED_BUILTIN, false);
       if (!regulate) {
         getDate();
@@ -135,9 +136,11 @@ void loop() {
       String message;
       message = resultKGY;
       message += resultRegistrator;
-      message += "UnixTime: " + String(currentHour - hours) + "\n";
+      //message += "UnixTime: " + String(currentHour - hours) + "\n";
       myBot.sendToChannel(channel, message, true);
-      hours = currentHour;
+      if((((currentHour - hours) == 1) || ((currentHour - hours) == -23)) && hourReport){
+        hours = currentHour;
+      }
       digitalWrite(LED_BUILTIN, true);
     }
   }
