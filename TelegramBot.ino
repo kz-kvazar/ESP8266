@@ -29,7 +29,6 @@ AsyncClient clientConstant;
 AsyncClient clientRegistrator;
 AsyncClient clientKGY;
 
-
 const char *ssid = "***";                                        // SSID WiFi network
 const char *pass = "***";                                        // Password  WiFi network
 const char *token = "***";  // Telegram token
@@ -46,6 +45,9 @@ uint16_t powerConstant = 9999;
 float opPr = 9999;
 int maxPower = 1560;
 int reg = 10;
+int generateDayStart = 0;
+int generateDayEnd = 0;
+
 
 int hours;
 int currentHour;
@@ -96,6 +98,8 @@ void loop() {
     hourTime = millis();
     currentHour = (ntpClient.getUnixTime() / 3600) % 24;
     blink();
+  }else if(hourTime > millis()){
+    hourTime = millis();
   }
 
   static uint32_t ledTime = millis();
@@ -104,6 +108,8 @@ void loop() {
     regulatePower();
     getDate();
     blink();
+  }else if(ledTime > millis()){
+    ledTime = millis();
   }
 
   TBMessage msg;
@@ -127,7 +133,7 @@ void loop() {
       blink();
       regulate = false;
       myBot.sendToChannel(channel, "Опция регулирования отключена", true);
-    } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || (((currentHour - hours) == 1) || ((currentHour - hours) == -23)) && hourReport) {
+    } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport)){
       digitalWrite(LED_BUILTIN, false);
       if (!regulate) {
         getDate();
@@ -136,9 +142,16 @@ void loop() {
       String message;
       message = resultKGY;
       message += resultRegistrator;
-      //message += "UnixTime: " + String(currentHour - hours) + "\n";
+      //message += "UnixTime: " + String(getTotal()*0.0009) + "\n";
+      if(generateDayStart != 0 && (currentHour - hours) == -23 && hourReport){
+        generateDayEnd = getTotal();
+        message += "Суточная генерация: " + String((generateDayEnd - generateDayStart)*0.0009) + " MW\n";
+        generateDayStart = generateDayEnd;
+        }else if(generateDayStart == 0){
+          generateDayStart = getTotal();
+        }
       myBot.sendToChannel(channel, message, true);
-      if((((currentHour - hours) == 1) || ((currentHour - hours) == -23)) && hourReport){
+      if((currentHour - hours == 1 || currentHour - hours == -23) && hourReport){
         hours = currentHour;
       }
       digitalWrite(LED_BUILTIN, true);
@@ -176,6 +189,36 @@ void setPower(int power) {
   client.stop();
   delay(100);
 }
+uint32_t getTotal(){
+  WiFiClient client;
+  if (!client.connect(serverIP, serverPort)) {
+    Serial.println("Connection failed.");
+    return 0;
+  }
+  transactionId = 6;
+      uint8_t request[] = {
+        (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+        (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+        0, 0,                             // Protocol ID (0 для Modbus TCP)
+        0, 6,                             // Длина данных
+        1,                                // Адрес устройства Modbus
+        3,                                // Код функции (чтение Holding Register)
+        (uint8_t)(8205 >> 8),             // Старший байт адреса регистра
+        (uint8_t)(8205 & 0xFF),           // Младший байт адреса регистра
+        0, 2                              // Количество регистров для чтения (1)
+      };
+    client.write(request, sizeof(request));
+    uint8_t response[13];
+    int bytesRead = client.readBytes(response, sizeof(response));
+    if (bytesRead != sizeof(response)) {
+    Serial.println("Failed to read response.");
+    client.stop();
+    return 0;
+    }
+    uint32_t generated = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
+    client.stop();
+    return generated;
+}
 void regulatePower() {
   static uint32_t powerUpTime = millis();
   static uint32_t lastRegulate = millis();
@@ -212,9 +255,11 @@ void regulatePower() {
     }
   } else if (powerActive <= 0 && powerConstant != 800) {
     setPower(800);
-    maxPower = 800;
+    maxPower = 1560;
     myBot.sendToChannel(channel, "КГУ остановленно!! \n Так и задумано?", true);
     blink();
+  }else if(lastRegulate > millis()){
+    lastRegulate = millis();
   }
 }
 void checkActPower() {
