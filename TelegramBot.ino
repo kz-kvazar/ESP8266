@@ -5,17 +5,20 @@
 #include <time.h>
 #define MYTZ "EET-2EEST,M3.5.0,M10.5.0/3"
 
-#include <EasyNTPClient.h>
+#include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
+
+#include <UnixTime.h>
 
 #include <Arduino.h>
 #include <FirebaseESP8266.h>
 
 WiFiUDP udp;
+UnixTime stamp(0);
 // Устанавливаем поправку на часовой пояс для Украины (GMT+2)
-EasyNTPClient ntpClient(udp, "pool.ntp.org", 2 * 60 * 60);
+NTPClient ntpClient(udp, "pool.ntp.org", 2 * 60 * 60);
 
 BearSSL::WiFiClientSecure client;
 BearSSL::Session session;
@@ -58,6 +61,10 @@ float opPr = 9999;
 int maxPower = 1560;
 int reg = 10;
 uint64_t UnixTime = 0;
+int day = 32;
+int intPower = 0;
+bool isPower = false;
+long monthStartGenerated = 0;
 
 
 int hours;
@@ -106,33 +113,32 @@ void setup() {
   fbdo.setBSSLBufferSize(4096 /* Rx buffer size in bytes from 512 - 16384 */, 1024 /* Tx buffer size in bytes from 512 - 16384 */);
   Firebase.begin(&config, &auth);
 
+  ntpClient.update();
+
+
   digitalWrite(LED_BUILTIN, true);
 }
 
 void loop() {
 
   static uint32_t hourTime = millis();
-  if (millis() - hourTime > 20000 && firebase/*&& hourReport*/) {
-    if (!regulate) {
-      getDate();
-      delay(5500);
-      if (!checkValidData()) {
-        return;
-      }
-    }
+  if (millis() - hourTime > 20000 && firebase /*&& hourReport*/) {
+    ntpClient.update();
+    currentHour = ntpClient.getHours(); /*(ntpClient.getUnixTime() / 3600) % 24*/
+    monthGenerated();
     pushToFirebase();
     hourTime = millis();
-    currentHour = (ntpClient.getUnixTime() / 3600) % 24;
+    //currentHour = (ntpClient.getUnixTime() / 3600) % 24;
     blink();
   } else if (hourTime > millis()) {
     hourTime = millis();
   }
 
   static uint32_t ledTime = millis();
-  if (millis() - ledTime > 5500 && (regulate || appRegulate)) {
-    ledTime = millis();
-    regulatePower();
+  if (millis() - ledTime > 5500 && (firebase || regulate)) {
+    //regulatePower();
     getDate();
+    ledTime = millis();
     blink();
   } else if (ledTime > millis()) {
     ledTime = millis();
@@ -147,7 +153,7 @@ void loop() {
         hourReport = false;
         myBot.sendToChannel(channel, "Опция отчетности отключена", true);
       } else {
-        hours = (ntpClient.getUnixTime() / 3600) % 24;
+        hours = ntpClient.getHours();  //(ntpClient.getUnixTime() / 3600) % 24;
         currentHour = hours;
         hourReport = true;
         myBot.sendToChannel(channel, "Опция отчетности включена", true);
@@ -161,26 +167,25 @@ void loop() {
         regulate = true;
         myBot.sendToChannel(channel, "Опция регулирования включена", true);
       }
-    }else if(msg.text == "/silent@KGY_operator_bot" || msg.text == "/silent"){
-      if(firebase){
-        regulate = false;
-        hourReport = false;
+    } else if (msg.text == "/base@KGY_operator_bot" || msg.text == "/base") {
+      if (firebase) {
         firebase = false;
-        myBot.sendToChannel(channel, "Все опции деактивированны", true);
-      }else{
+        myBot.sendToChannel(channel, "FireBase отключена", true);
+      } else {
         firebase = false;
         myBot.sendToChannel(channel, "FireBase активированн", true);
       }
       myBot.sendToChannel(channel, "Все опции деактивированны", true);
     } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport)) {
       digitalWrite(LED_BUILTIN, false);
-      if (!regulate) {
+      if (!regulate && !firebase) {
         getDate();
         delay(5500);
       }
       String message;
       message = resultKGY;
       message += resultRegistrator;
+      message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW";
       myBot.sendToChannel(channel, message, true);
       if ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport) {
         hours = currentHour;
@@ -196,29 +201,31 @@ void blink() {
   delay(200);
 }
 void setPower(int power) {
-  WiFiClient client;
-  if (!client.connect(serverIP, serverPort)) {
-    Serial.println("Connection failed.");
-    return;
-  }
-  transactionId = 5;
-  uint8_t request[] = {
-    (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-    (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-    0, 0,                             // Protocol ID (0 для Modbus TCP)
-    0, 6,                             // Длина данных
-    1,                                // Адрес устройства Modbus
-    16,                               // Код функции (чтение Holding Register)
-    (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
-    (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
-    0, 1,                             // Количество регистров для записи (1)
-    2,                                // Колличество байт данных
-    (uint8_t)(power >> 8),            // Данные первый байт
-    (uint8_t)(power & 0xFF)           // Данные второй байт
-  };
-  client.write(request, sizeof(request));
-  client.stop();
-  delay(100);
+  // WiFiClient client;
+  // if (!client.connect(serverIP, serverPort)) {
+  //   Serial.println("Connection failed.");
+  //   return;
+  // }
+  // transactionId = 5;
+  // uint8_t request[] = {
+  //   (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+  //   (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+  //   0, 0,                             // Protocol ID (0 для Modbus TCP)
+  //   0, 6,                             // Длина данных
+  //   1,                                // Адрес устройства Modbus
+  //   16,                               // Код функции (чтение Holding Register)
+  //   (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
+  //   (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
+  //   0, 1,                             // Количество регистров для записи (1)
+  //   2,                                // Колличество байт данных
+  //   (uint8_t)(power >> 8),            // Данные первый байт
+  //   (uint8_t)(power & 0xFF)           // Данные второй байт
+  // };
+  // client.write(request, sizeof(request));
+  // client.stop();
+  // delay(100);
+  intPower = power;
+  isPower = true;
 }
 bool checkValidData() {
   if (trottlePosition > 100 || trottlePosition < 0 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -200 || opPr > 40 || opPr < -5 || totalGenerated == 0) {
@@ -235,9 +242,7 @@ void regulatePower() {
   static uint32_t powerUpTime = millis();
   static uint32_t lastRegulate = millis();
 
-  if (!checkValidData()) {
-    return;
-  }
+  if ((!regulate && !appRegulate) || !checkValidData()) return;
 
   if (powerActive > 0 && millis() - lastRegulate > 20000) {
     (opPr > 6 && powerActive < 1350) ? reg = 20 : reg = 10;
@@ -435,6 +440,29 @@ void sendKGYRequest() {
       c->write(reinterpret_cast<const char *>(request), sizeof(request));
     } else if (transactionId == 6) {
       totalGenerated = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
+
+      regulatePower();
+
+      if (isPower) {
+        isPower = false;
+        transactionId = 5;
+        uint8_t request[] = {
+          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+          0, 0,                             // Protocol ID (0 для Modbus TCP)
+          0, 6,                             // Длина данных
+          1,                                // Адрес устройства Modbus
+          16,                               // Код функции (чтение Holding Register)
+          (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
+          (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
+          0, 1,                             // Количество регистров для записи (1)
+          2,                                // Колличество байт данных
+          (uint8_t)(intPower >> 8),         // Данные первый байт
+          (uint8_t)(intPower & 0xFF)        // Данные второй байт
+        };
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      }
+
       c->stop();
     }
   });
@@ -448,6 +476,9 @@ void sendKGYRequest() {
   });
 }
 void pushToFirebase() {
+  if (!checkValidData()) {
+    return;
+  }
   Firebase.setFloat(fbdo, "/opPresher", opPr);
   Firebase.setFloat(fbdo, "/trottlePosition", trottlePosition);
   Firebase.setInt(fbdo, "/powerConstant", powerConstant);
@@ -469,4 +500,22 @@ void pushToFirebase() {
       }
     }
   }
+}
+void monthGenerated() {
+  int currentDay = getDayOfMonthFromUnixTime();
+  if (currentDay == 1 && day != currentDay) {
+    Firebase.setInt(fbdo, "/monthStartGenerated", totalGenerated);
+    day = currentDay;
+  }
+  if (monthStartGenerated == 0) {
+    if (Firebase.getInt(fbdo, "/monthStartGenerated")) {
+      if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
+        monthStartGenerated = (fbdo.to<int>());
+      }
+    }
+  }
+}
+int getDayOfMonthFromUnixTime() {
+  stamp.getDateTime(ntpClient.getEpochTime());
+  return stamp.day;
 }
