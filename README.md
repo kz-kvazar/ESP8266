@@ -4,3 +4,4 @@ ESP8266 communicate with PLC via Modbus TCP async reqwest. ESP8266 receive comma
 - /report  - recive report every hour;
 - /regulate - automatic regulate;
 - /status - recive report;
+- /base- disable FireBase.
