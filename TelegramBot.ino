@@ -171,12 +171,11 @@ void loop() {
     } else if (msg.text == "/base@KGY_operator_bot" || msg.text == "/base") {
       if (firebase) {
         firebase = false;
-        myBot.sendToChannel(channel, "FireBase отключена", true);
+        myBot.sendToChannel(channel, "FireBase деактивирован", true);
       } else {
         firebase = true;
-        myBot.sendToChannel(channel, "FireBase активированн", true);
+        myBot.sendToChannel(channel, "FireBase активирован", true);
       }
-      myBot.sendToChannel(channel, "Все опции деактивированны", true);
     } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport)) {
       digitalWrite(LED_BUILTIN, false);
       if (!regulate && !firebase && !appRegulate) {
