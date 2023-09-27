@@ -74,6 +74,7 @@ bool regulate = false;
 bool skipFirst = false;
 bool appRegulate = false;
 bool firebase = true;
+bool kgyLock = true;
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -135,7 +136,7 @@ void loop() {
   }
 
   static uint32_t ledTime = millis();
-  if (millis() - ledTime > 5500 && (firebase || regulate)) {
+  if (millis() - ledTime > 1500 && (firebase || regulate || appRegulate)) {
     //regulatePower();
     getDate();
     ledTime = millis();
@@ -172,20 +173,22 @@ void loop() {
         firebase = false;
         myBot.sendToChannel(channel, "FireBase отключена", true);
       } else {
-        firebase = false;
+        firebase = true;
         myBot.sendToChannel(channel, "FireBase активированн", true);
       }
       myBot.sendToChannel(channel, "Все опции деактивированны", true);
     } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport)) {
       digitalWrite(LED_BUILTIN, false);
-      if (!regulate && !firebase) {
+      if (!regulate && !firebase && !appRegulate) {
         getDate();
         delay(5500);
       }
       String message;
       message = resultKGY;
       message += resultRegistrator;
-      message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW";
+      if(totalGenerated != 0){
+        message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW";
+      }
       myBot.sendToChannel(channel, message, true);
       if ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport) {
         hours = currentHour;
@@ -196,9 +199,9 @@ void loop() {
 }
 void blink() {
   digitalWrite(LED_BUILTIN, false);
-  delay(200);
+  delay(100);
   digitalWrite(LED_BUILTIN, true);
-  delay(200);
+  delay(100);
 }
 void setPower(int power) {
   // WiFiClient client;
@@ -249,27 +252,27 @@ void regulatePower() {
     if (opPr < 3) {
       (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
       lastRegulate = millis();
-      blink();
+      //blink();
     } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower) {
       checkActPower();
       checkThrottle();
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
       lastRegulate = millis();
-      blink();
+      //blink();
     } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && ((powerConstant + 10) < maxPower) && trottlePosition < 90) {
       setPower(powerConstant + reg);
       lastRegulate = millis();
-      blink();
+      //blink();
     } else if (opPr > 5 && trottlePosition < 80 && ((millis() - powerUpTime) >= 300000) && maxPower <= 1550) {
       maxPower += 10;
       powerUpTime = millis();
-      blink();
+      //blink();
     }
   } else if (powerActive <= 0 && powerConstant != 800) {
     setPower(800);
     maxPower = 1560;
-    myBot.sendToChannel(channel, "КГУ остановленно!! \n Так и задумано?", true);
-    blink();
+    myBot.sendToChannel(channel, "КГУ остановленно!! \nТак и задумано?", true);
+    //blink();
   } else if (lastRegulate > millis()) {
     lastRegulate = millis();
   }
@@ -287,7 +290,7 @@ void getDate() {
 void sendRegistratorRequest() {
   if (!clientRegistrator.connect(registratorIP, serverPort)) {
     opPr = 9999;  // Установка значения в 9999 при ошибке соединения
-    resultRegistrator = "Ошибка соединения с регистратором!!! \n Регулирование невозможно.";
+    resultRegistrator = "Ошибка соединения с регистратором!!! \nРегулирование невозможно.";
     return;
   }
 
@@ -347,25 +350,26 @@ void sendRegistratorRequest() {
       resultRegistrator += "СН4 ВНС-№1: " + String(floatCH4_1) + " %\n";
       resultRegistrator += "СН4 ВНС-№2: " + String(floatCH4_2) + " %\n";
     }
-    c->stop();
+    c->close(true);
   });
   clientRegistrator.onError([](void *arg, AsyncClient *c, int8_t error) {
     opPr = 9999;  // Установка значения в 9999 при ошибке соединения
-    resultRegistrator = "Ошибка соединения с регистратором!!! \n Регулирование невозможно.";
-    c->stop();
+    resultRegistrator = "Ошибка соединения с регистратором!!! \nРегулирование невозможно.";
+    //c->close(true);
   });
 }
 void sendKGYRequest() {
-  if (!clientKGY.connect(serverIP, serverPort)) {
+  if (kgyLock && !clientKGY.connect(serverIP, serverPort)) {
     Serial.println("Connection to KGY failed.");
     trottlePosition = 9999;
     powerConstant = 9999;
     powerActive = 9999;
-    resultKGY = "Ошибка соединения с КГУ!!! \n Регулирование невозможно.";
+    resultKGY = "Ошибка подключения к КГУ!!! \nРегулирование невозможно.";
     return;
   }
   // Создайте и отправьте запрос к КГУ
   clientKGY.onConnect([](void *arg, AsyncClient *c) {
+    kgyLock = false;
     transactionId = 1;
     uint8_t request[] = {
       (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
@@ -461,9 +465,11 @@ void sendKGYRequest() {
           (uint8_t)(intPower & 0xFF)        // Данные второй байт
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      }else{
+        c->close(true);
       }
-
-      c->stop();
+    }else if (transactionId == 5){
+        c->close(true);
     }
   });
   clientKGY.onError([](void *arg, AsyncClient *c, int8_t error) {
@@ -471,8 +477,14 @@ void sendKGYRequest() {
     powerConstant = 9999;
     powerActive = 9999;
     totalGenerated = 0;
-    resultKGY = "Ошибка соединения с КГУ!!! \n Регулирование невозможно.\n";
-    c->stop();
+    resultKGY = "Ошибка получения данных с КГУ!!! \nРегулирование невозможно.\n";
+    resultKGY += String(error) + " error code \n";
+    //resultKGY = errorToString(err_t getCloseError(void) const { return _errorTracker->getCloseError();});
+    //c->close(true);
+    //kgyLock = true;
+  });
+  clientKGY.onDisconnect([](void *arg, AsyncClient *c){
+    kgyLock = true;
   });
 }
 void pushToFirebase() {
@@ -491,7 +503,7 @@ void pushToFirebase() {
 
   if (Firebase.getInt(fbdo, "/UnixTime")) {
     if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
-      uint64_t lastSeen = (fbdo.to<int>());
+      uint32_t lastSeen = (fbdo.to<int>());
       if (lastSeen != UnixTime) {
         UnixTime = lastSeen;
         appRegulate = true;
