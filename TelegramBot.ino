@@ -75,6 +75,7 @@ bool skipFirst = false;
 bool appRegulate = false;
 bool firebase = true;
 bool kgyLock = true;
+bool alarm = false;
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -186,8 +187,9 @@ void loop() {
       message = resultKGY;
       message += resultRegistrator;
       if(totalGenerated != 0){
-        message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW";
+        message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW\n";
       }
+      if(alarm) message += "-Обнаружена ошибка КГУ-";
       myBot.sendToChannel(channel, message, true);
       if ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport) {
         hours = currentHour;
@@ -428,6 +430,27 @@ void sendKGYRequest() {
       powerActive = (response[9] << 8) | response[10];
       resultKGY += "Активная мощность: " + String(powerActive) + " kW\n";
 
+      transactionId = 9;
+      uint8_t request[] = {
+        (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+        (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+        0, 0,                             // Protocol ID (0 для Modbus TCP)
+        0, 6,                             // Длина данных
+        1,                                // Адрес устройства Modbus
+        3,                                // Код функции (чтение Holding Register)
+        (uint8_t)(8235 >> 8),             // Старший байт адреса регистра
+        (uint8_t)(8235 & 0xFF),           // Младший байт адреса регистра
+        0, 2                              // Количество регистров для чтения (1)
+      };
+      c->write(reinterpret_cast<const char *>(request), sizeof(request));
+    }else if(transactionId == 9){
+      short values = (response[9] << 8) | response[10];
+      
+      boolean bit7 = ((values >> 7) & 1) == 0; // alarm bit
+      boolean bit8 = ((values >> 8) & 1) == 0; // error bit
+
+      alarm = bit7 || bit8;
+
       transactionId = 6;
       uint8_t request[] = {
         (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
@@ -499,6 +522,7 @@ void pushToFirebase() {
   Firebase.setFloat(fbdo, "/gtsPresher", gtsPr);
   Firebase.setFloat(fbdo, "/kgyPresher", kgyPr);
   Firebase.setInt(fbdo, "/totalActivePower", totalGenerated);
+  Firebase.setBool(fbdo, "/alarm", alarm);
 
   if (Firebase.getInt(fbdo, "/UnixTime")) {
     if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
