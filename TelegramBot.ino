@@ -127,7 +127,7 @@ void loop() {
   if (millis() - hourTime > 20000 && firebase /*&& hourReport*/) {
     ntpClient.update();
     currentHour = ntpClient.getHours(); /*(ntpClient.getUnixTime() / 3600) % 24*/
-    monthGenerated();
+    //monthGenerated();
     pushToFirebase();
     hourTime = millis();
     //currentHour = (ntpClient.getUnixTime() / 3600) % 24;
@@ -186,9 +186,11 @@ void loop() {
       String message;
       message = resultKGY;
       message += resultRegistrator;
-      if(totalGenerated != 0){
-        message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW\n";
-      }
+      // if(totalGenerated != 0){
+      //   message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW\n";
+      // }
+      message += "Максимальная мощность: " + String(maxPower) + "\n";
+      if(appRegulate) message += "Удаленное регулирование включено\n";
       if(alarm) message += "-Обнаружена ошибка КГУ-";
       myBot.sendToChannel(channel, message, true);
       if ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport) {
@@ -532,7 +534,14 @@ void pushToFirebase() {
         appRegulate = true;
       } else {
         appRegulate = false;
+        maxPower = 1560;
+        Firebase.setInt(fbdo, "/MaxPower", maxPower);
       }
+    }
+  }
+  if (Firebase.getInt(fbdo, "/MaxPower")) {
+    if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
+      maxPower = (fbdo.to<int>());
     }
   }
 }
