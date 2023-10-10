@@ -1,4 +1,3 @@
-
 #define USE_CLIENTSSL true
 #include <AsyncTelegram2.h>
 // Timezone definition
@@ -17,8 +16,8 @@
 
 WiFiUDP udp;
 UnixTime stamp(0);
-// Устанавливаем поправку на часовой пояс для Украины (GMT+2)
-NTPClient ntpClient(udp, "pool.ntp.org", 2 * 60 * 60);
+// Устанавливаем поправку на часовой пояс для Украины (GMT+3)
+NTPClient ntpClient(udp, "pool.ntp.org", 3 * 60 * 60);
 
 BearSSL::WiFiClientSecure client;
 BearSSL::Session session;
@@ -78,6 +77,8 @@ bool kgyLock = true;
 bool alarm = false;
 
 void setup() {
+  Serial.begin(115200);
+  Serial.println("\nStarting TelegramBot...");
   pinMode(LED_BUILTIN, OUTPUT);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, pass);
@@ -116,6 +117,7 @@ void setup() {
   Firebase.begin(&config, &auth);
 
   ntpClient.update();
+  hours = ntpClient.getHours();
 
 
   digitalWrite(LED_BUILTIN, true);
@@ -126,11 +128,11 @@ void loop() {
   static uint32_t hourTime = millis();
   if (millis() - hourTime > 20000 && firebase /*&& hourReport*/) {
     ntpClient.update();
-    currentHour = ntpClient.getHours(); /*(ntpClient.getUnixTime() / 3600) % 24*/
-    //monthGenerated();
+    currentHour = ntpClient.getHours();
+    monthGenerated();
+    firebaseReport();
     pushToFirebase();
     hourTime = millis();
-    //currentHour = (ntpClient.getUnixTime() / 3600) % 24;
     blink();
   } else if (hourTime > millis()) {
     hourTime = millis();
@@ -138,7 +140,6 @@ void loop() {
 
   static uint32_t ledTime = millis();
   if (millis() - ledTime > 1500 && (firebase || regulate || appRegulate)) {
-    //regulatePower();
     getDate();
     ledTime = millis();
     blink();
@@ -155,7 +156,7 @@ void loop() {
         hourReport = false;
         myBot.sendToChannel(channel, "Опция отчетности отключена", true);
       } else {
-        hours = ntpClient.getHours();  //(ntpClient.getUnixTime() / 3600) % 24;
+        hours = ntpClient.getHours();
         currentHour = hours;
         hourReport = true;
         myBot.sendToChannel(channel, "Опция отчетности включена", true);
@@ -186,12 +187,12 @@ void loop() {
       String message;
       message = resultKGY;
       message += resultRegistrator;
-      // if(totalGenerated != 0){
-      //   message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW\n";
-      // }
+      if(monthStartGenerated != 0){
+        message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated)/1000) + " MW\n";
+      }
       message += "Максимальная мощность: " + String(maxPower) + "\n";
-      if(appRegulate) message += "Удаленное регулирование включено\n";
-      if(alarm) message += "-Обнаружена ошибка КГУ-";
+      if (appRegulate) message += "Удаленное регулирование включено\n";
+      if (alarm) message += "-Обнаружена ошибка КГУ-";
       myBot.sendToChannel(channel, message, true);
       if ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport) {
         hours = currentHour;
@@ -207,29 +208,6 @@ void blink() {
   delay(100);
 }
 void setPower(int power) {
-  // WiFiClient client;
-  // if (!client.connect(serverIP, serverPort)) {
-  //   Serial.println("Connection failed.");
-  //   return;
-  // }
-  // transactionId = 5;
-  // uint8_t request[] = {
-  //   (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-  //   (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-  //   0, 0,                             // Protocol ID (0 для Modbus TCP)
-  //   0, 6,                             // Длина данных
-  //   1,                                // Адрес устройства Modbus
-  //   16,                               // Код функции (чтение Holding Register)
-  //   (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
-  //   (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
-  //   0, 1,                             // Количество регистров для записи (1)
-  //   2,                                // Колличество байт данных
-  //   (uint8_t)(power >> 8),            // Данные первый байт
-  //   (uint8_t)(power & 0xFF)           // Данные второй байт
-  // };
-  // client.write(request, sizeof(request));
-  // client.stop();
-  // delay(100);
   intPower = power;
   isPower = true;
 }
@@ -255,27 +233,22 @@ void regulatePower() {
     if (opPr < 3) {
       (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
       lastRegulate = millis();
-      //blink();
     } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower) {
       checkActPower();
       checkThrottle();
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
       lastRegulate = millis();
-      //blink();
     } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && ((powerConstant + 10) < maxPower) && trottlePosition < 90) {
       setPower(powerConstant + reg);
       lastRegulate = millis();
-      //blink();
     } else if (opPr > 5 && trottlePosition < 80 && ((millis() - powerUpTime) >= 300000) && maxPower <= 1550) {
       maxPower += 10;
       powerUpTime = millis();
-      //blink();
     }
   } else if (powerActive <= 0 && powerConstant != 800) {
     setPower(800);
     maxPower = 1560;
     myBot.sendToChannel(channel, "КГУ остановленно!! \nТак и задумано?", true);
-    //blink();
   } else if (lastRegulate > millis()) {
     lastRegulate = millis();
   }
@@ -358,7 +331,6 @@ void sendRegistratorRequest() {
   clientRegistrator.onError([](void *arg, AsyncClient *c, int8_t error) {
     opPr = 9999;  // Установка значения в 9999 при ошибке соединения
     resultRegistrator = "Ошибка соединения с регистратором!!! \nРегулирование невозможно.";
-    //c->close(true);
   });
 }
 void sendKGYRequest() {
@@ -390,9 +362,7 @@ void sendKGYRequest() {
   });
   // Установите обработчик ответа от КГУ
   clientKGY.onData([](void *arg, AsyncClient *c, void *data, size_t len) {
-    //uint8_t *response = static_cast<uint8_t *>(data);
     uint8_t *response = static_cast<uint8_t *>(data);
-    //trottlePosition = (((response[8] << 8) | response[9]) / 10);
     uint8_t transactionId = (((response[0] << 8) | response[1]));
     if (transactionId == 1) {
       trottlePosition = (((response[9] << 8) | response[10]) / 10);
@@ -445,11 +415,11 @@ void sendKGYRequest() {
         0, 2                              // Количество регистров для чтения (1)
       };
       c->write(reinterpret_cast<const char *>(request), sizeof(request));
-    }else if(transactionId == 9){
+    } else if (transactionId == 9) {
       short values = (response[9] << 8) | response[10];
-      
-      boolean bit7 = ((values >> 7) & 1) == 0; // alarm bit
-      boolean bit8 = ((values >> 8) & 1) == 0; // error bit
+
+      boolean bit7 = ((values >> 7) & 1) == 0;  // alarm bit
+      boolean bit8 = ((values >> 8) & 1) == 0;  // error bit
 
       alarm = bit7 || bit8;
 
@@ -489,11 +459,11 @@ void sendKGYRequest() {
           (uint8_t)(intPower & 0xFF)        // Данные второй байт
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else{
+      } else {
         c->close(true);
       }
-    }else if (transactionId == 5){
-        c->close(true);
+    } else if (transactionId == 5) {
+      c->close(true);
     }
   });
   clientKGY.onError([](void *arg, AsyncClient *c, int8_t error) {
@@ -503,11 +473,8 @@ void sendKGYRequest() {
     totalGenerated = 0;
     resultKGY = "Ошибка получения данных с КГУ!!! \nРегулирование невозможно.\n";
     resultKGY += String(error) + " error code \n";
-    //resultKGY = errorToString(err_t getCloseError(void) const { return _errorTracker->getCloseError();});
-    //c->close(true);
-    //kgyLock = true;
   });
-  clientKGY.onDisconnect([](void *arg, AsyncClient *c){
+  clientKGY.onDisconnect([](void *arg, AsyncClient *c) {
     kgyLock = true;
   });
 }
@@ -532,6 +499,11 @@ void pushToFirebase() {
       if (lastSeen != UnixTime) {
         UnixTime = lastSeen;
         appRegulate = true;
+        if (Firebase.getInt(fbdo, "/MaxPower")) {
+          if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
+            maxPower = (fbdo.to<int>());
+          }
+        }
       } else {
         appRegulate = false;
         maxPower = 1560;
@@ -539,27 +511,46 @@ void pushToFirebase() {
       }
     }
   }
-  if (Firebase.getInt(fbdo, "/MaxPower")) {
-    if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
-      maxPower = (fbdo.to<int>());
-    }
-  }
 }
+
 void monthGenerated() {
-  int currentDay = getDayOfMonthFromUnixTime();
-  if (currentDay == 1 && day != currentDay) {
-    Firebase.setInt(fbdo, "/monthStartGenerated", totalGenerated);
-    day = currentDay;
+  if (!checkValidData()) {
+    return;
   }
+  int currentDay = getDayOfMonthFromUnixTime();
   if (monthStartGenerated == 0) {
     if (Firebase.getInt(fbdo, "/monthStartGenerated")) {
       if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
         monthStartGenerated = (fbdo.to<int>());
       }
     }
+  }else if (currentDay == 1 && day != currentDay) {
+    Firebase.setInt(fbdo, "/monthStartGenerated", totalGenerated);
+    day = currentDay;
   }
 }
 int getDayOfMonthFromUnixTime() {
   stamp.getDateTime(ntpClient.getEpochTime());
   return stamp.day;
+}
+void firebaseReport() {
+  if (!checkValidData()) {
+    return;
+  }
+  if (((currentHour - hours == 1 || (currentHour - hours) == -23) )&& firebase) {
+    stamp.getDateTime(ntpClient.getEpochTime());
+    String now = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) + ":00";
+    String date = "/HourReport/" + String(ntpClient.getEpochTime());
+    hours = currentHour;
+
+    Firebase.setFloat(fbdo, date + "/trottlePosition", trottlePosition);
+    Firebase.setInt(fbdo, date + "/powerConstant", powerConstant);
+    Firebase.setInt(fbdo, date + "/powerActive", powerActive);
+    Firebase.setFloat(fbdo, date + "/CH4_1", CH4_1p);
+    Firebase.setFloat(fbdo, date + "/CH4_2", CH4_2p);
+    Firebase.setFloat(fbdo, date + "/gtsPresher", gtsPr);
+    Firebase.setFloat(fbdo, date + "/kgyPresher", kgyPr);
+    Firebase.setInt(fbdo, date + "/totalActivePower", totalGenerated);
+    Firebase.setString(fbdo, date + "/date", now);
+  }
 }
