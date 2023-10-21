@@ -116,6 +116,8 @@ bool appRegulate = false;
 bool firebase = true;
 bool kgyLock = true;
 bool isAlarm = false;
+uint32_t epochTime = 0;
+String reset = String(ESP.getResetInfo()) + "\n";
 
 #define LED_BUILTIN 2
 
@@ -171,7 +173,9 @@ void setup() {
   Firebase.begin(&config, &auth);
 
   ntpClient.update();
-
+  epochTime = ntpClient.getEpochTime();
+  currentHour  = (epochTime / 3600) % 24;
+  hours = currentHour;
 
   digitalWrite(LED_BUILTIN, false);
 }
@@ -180,10 +184,11 @@ void loop() {
 
   static uint32_t hourTime = millis();
   if (millis() - hourTime > 20000 && firebase /*&& hourReport*/) {
-    ntpClient.update();
-    currentHour = ntpClient.getHours(); /*(ntpClient.getUnixTime() / 3600) % 24*/
+    //currentHour = ntpClient.getHours(); /*(ntpClient.getUnixTime() / 3600) % 24*/
+    //stamp.getDateTime(now)
     monthGenerated();
     pushToFirebase();
+    firebaseReport();
     hourTime = millis();
     //currentHour = (ntpClient.getUnixTime() / 3600) % 24;
     blink();
@@ -199,6 +204,8 @@ void loop() {
     blink();
   } else if (ledTime > millis()) {
     ledTime = millis();
+    ntpClient.update();
+    epochTime = ntpClient.getEpochTime();
   }
 
   TBMessage msg;
@@ -210,6 +217,8 @@ void loop() {
         hourReport = false;
         myBot.sendToChannel(channel, "Опция отчетности отключена", true);
       } else {
+        //ESP.restart();
+        ntpClient.update();
         hours = ntpClient.getHours();  //(ntpClient.getUnixTime() / 3600) % 24;
         currentHour = hours;
         hourReport = true;
@@ -239,9 +248,12 @@ void loop() {
         delay(5500);
       }
       String message;
-      message = resultKGY;
+      stamp.getDateTime(getTime());
+      message = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) +":"+ String(stamp.minute) + ":"+ String(stamp.second) +"\n";
+      message += reset;
+      message += resultKGY;
       message += resultRegistrator;
-      if (totalGenerated != 0) {
+      if (monthStartGenerated != 0) {
         message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated) / 1000) + " MW\n";
       }
       message += "Максимальная мощность: " + String(appMaxPower) + "\n";
@@ -329,6 +341,7 @@ void regulatePower() {
   } else if (powerActive <= 0 && powerConstant != 800) {
     setPower(800);
     appMaxPower = 1560;
+    maxPower = 1560;
     myBot.sendToChannel(channel, "КГУ остановленно!! \nТак и задумано?", true);
     //blink();
   } else if (lastRegulate > millis()) {
@@ -600,7 +613,27 @@ void pushToFirebase() {
     }
   }
 }
+void firebaseReport() {
+  if (!checkValidData()) {
+    return;
+  }
+  if (((currentHour - hours == 1 || (currentHour - hours) == -23) )&& firebase) {
+    stamp.getDateTime(getTime());
+    String now = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) + ":00";
+    String date = "/HourReport/" + String(ntpClient.getEpochTime());
+    hours = currentHour;
 
+    Firebase.RTDB.setFloat(&fbdo, date + "/trottlePosition", trottlePosition);
+    Firebase.RTDB.setInt(&fbdo, date + "/powerConstant", powerConstant);
+    Firebase.RTDB.setInt(&fbdo, date + "/powerActive", powerActive);
+    Firebase.RTDB.setFloat(&fbdo, date + "/CH4_1", CH4_1p);
+    Firebase.RTDB.setFloat(&fbdo, date + "/CH4_2", CH4_2p);
+    Firebase.RTDB.setFloat(&fbdo, date + "/gtsPresher", gtsPr);
+    Firebase.RTDB.setFloat(&fbdo, date + "/kgyPresher", kgyPr);
+    Firebase.RTDB.setInt(&fbdo, date + "/totalActivePower", totalGenerated);
+    Firebase.RTDB.setString(&fbdo, date + "/date", now);
+  }
+}
 void monthGenerated() {
   int currentDay = getDayOfMonthFromUnixTime();
   if (currentDay == 1 && day != currentDay) {
@@ -615,7 +648,14 @@ void monthGenerated() {
     }
   }
 }
+
 int getDayOfMonthFromUnixTime() {
-  stamp.getDateTime(ntpClient.getEpochTime());
+  stamp.getDateTime(getTime());
   return stamp.day;
 }
+
+uint32_t getTime(){
+  uint32_t now  = (millis()/1000) + epochTime;
+  currentHour = (now / 3600) % 24;
+      return now;
+  }
