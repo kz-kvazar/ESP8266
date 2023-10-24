@@ -1,6 +1,7 @@
 #define USE_CLIENTSSL false
 
 #include <AsyncTelegram2.h>
+#include <Adafruit_SleepyDog.h>
 
 // Timezone definition
 #include <time.h>
@@ -178,6 +179,7 @@ void setup() {
   hours = currentHour;
 
   digitalWrite(LED_BUILTIN, false);
+  int countdownMS = Watchdog.enable(20000);
 }
 
 void loop() {
@@ -186,22 +188,23 @@ void loop() {
   if (millis() - hourTime > 20000 && firebase /*&& hourReport*/) {
     //currentHour = ntpClient.getHours(); /*(ntpClient.getUnixTime() / 3600) % 24*/
     //stamp.getDateTime(now)
-    monthGenerated();
-    pushToFirebase();
-    firebaseReport();
-    hourTime = millis();
-    //currentHour = (ntpClient.getUnixTime() / 3600) % 24;
-    blink();
+      monthGenerated();
+      pushToFirebase();
+      firebaseReport();
+      hourTime = millis();
+      //currentHour = (ntpClient.getUnixTime() / 3600) % 24;
+      blink(); 
   } else if (hourTime > millis()) {
     hourTime = millis();
   }
 
   static uint32_t ledTime = millis();
-  if (millis() - ledTime > 1500 && (firebase || regulate || appRegulate)) {
+  if (millis() - ledTime > 2000 && (firebase || regulate || appRegulate)) {
     //regulatePower();
-    getDate();
-    ledTime = millis();
-    blink();
+      getDate();
+      ledTime = millis();
+      blink();
+    Watchdog.reset();
   } else if (ledTime > millis()) {
     ledTime = millis();
     ntpClient.update();
@@ -301,9 +304,14 @@ void setPower(int power) {
   isPower = true;
 }
 bool checkValidData() {
-  if (trottlePosition > 100 || trottlePosition < 0 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -200 || opPr > 40 || opPr < -5 || totalGenerated == 0) {
-    if (skipFirst) {
+  static uint32_t validTime = millis();
+
+  if (trottlePosition > 100 || trottlePosition < 0 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0) {
+    if (skipFirst && millis() - validTime > 60000 ) {
+      validTime = millis();
       myBot.sendTo(userid, "trottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
+    } else if(validTime > millis()){
+      validTime = millis();
     }
     skipFirst = true;
     return false;
@@ -605,10 +613,11 @@ void pushToFirebase() {
             maxPower = (fbdo.to<int>());
           }
         }
-      } else if (maxPower != 1560) {
+      } else if (maxPower != 1560 || appMaxPower != 1560 || appRegulate != false) {
         appRegulate = false;
+        appMaxPower = 1560;
         maxPower = 1560;
-        Firebase.RTDB.setInt(&fbdo, "/MaxPower", maxPower);
+        //Firebase.RTDB.setInt(&fbdo, "/MaxPower", maxPower);
       }
     }
   }
@@ -617,7 +626,7 @@ void firebaseReport() {
   if (!checkValidData()) {
     return;
   }
-  if (((currentHour - hours == 1 || (currentHour - hours) == -23) )&& firebase) {
+  if (((currentHour - hours == 1 || (currentHour - hours) == -23)) && firebase) {
     stamp.getDateTime(getTime());
     String now = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) + ":00";
     String date = "/HourReport/" + String(ntpClient.getEpochTime());
@@ -657,5 +666,5 @@ int getDayOfMonthFromUnixTime() {
 uint32_t getTime(){
   uint32_t now  = (millis()/1000) + epochTime;
   currentHour = (now / 3600) % 24;
-      return now;
+  return now;
   }
