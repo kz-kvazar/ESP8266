@@ -39,6 +39,7 @@ AsyncTelegram2 myBot(client);
 
 #include <Arduino.h>
 #if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
+SET_LOOP_TASK_STACK_SIZE(16*1024); // 16KB
 #include <WiFi.h>
 #elif defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -101,7 +102,7 @@ float opPr = 9999;
 int maxPower = 1560;
 int appMaxPower = 1560;
 int reg = 10;
-uint64_t UnixTime = 0;
+uint64_t compareUnixTime = 0;
 int day = 32;
 int intPower = 0;
 bool isPower = false;
@@ -118,12 +119,13 @@ bool firebase = true;
 bool kgyLock = true;
 bool isAlarm = false;
 uint32_t epochTime = 0;
-String reset = String(ESP.getResetInfo()) + "\n";
+String reset = "";//String(ESP.getResetInfo()) + "\n";
 
 #define LED_BUILTIN 2
+// This sets Arduino Stack Size - comment this line to use default 8K stack size
 
 void setup() {
-  pinMode(2, OUTPUT);  // Настройка пина GPIO2 как выхода
+  pinMode(LED_BUILTIN, OUTPUT);  // Настройка пина GPIO2 как выхода
   // initialize the Serial
   Serial.begin(115200);
   Serial.println("\nStarting TelegramBot...");
@@ -188,22 +190,22 @@ void loop() {
   if (millis() - hourTime > 20000 && firebase /*&& hourReport*/) {
     //currentHour = ntpClient.getHours(); /*(ntpClient.getUnixTime() / 3600) % 24*/
     //stamp.getDateTime(now)
+      blink(); 
       monthGenerated();
       pushToFirebase();
       firebaseReport();
       hourTime = millis();
       //currentHour = (ntpClient.getUnixTime() / 3600) % 24;
-      blink(); 
   } else if (hourTime > millis()) {
     hourTime = millis();
   }
 
   static uint32_t ledTime = millis();
-  if (millis() - ledTime > 2000 && (firebase || regulate || appRegulate)) {
+  if (millis() - ledTime > 3000 && (firebase || regulate || appRegulate)) {
     //regulatePower();
+      blink(); 
       getDate();
       ledTime = millis();
-      blink();
     Watchdog.reset();
   } else if (ledTime > millis()) {
     ledTime = millis();
@@ -212,7 +214,7 @@ void loop() {
   }
 
   TBMessage msg;
-  if (myBot.getNewMessage(msg) || (((currentHour - hours) == 1) || ((currentHour - hours) == -23)) && hourReport) {
+  if (myBot.getNewMessage(msg) || ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport)) {
     blink();
     if (msg.text == "/report@KGY_operator_bot" || msg.text == "/report") {
       blink();
@@ -253,6 +255,7 @@ void loop() {
       String message;
       stamp.getDateTime(getTime());
       message = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) +":"+ String(stamp.minute) + ":"+ String(stamp.second) +"\n";
+      // message = uxTaskGetStackHighWaterMark(NULL) + "\n";
       message += reset;
       message += resultKGY;
       message += resultRegistrator;
@@ -271,10 +274,9 @@ void loop() {
   }
 }
 void blink() {
-  digitalWrite(LED_BUILTIN, true);
-  delay(100);
   digitalWrite(LED_BUILTIN, false);
-  delay(100);
+  delay(200);
+  digitalWrite(LED_BUILTIN, true);
 }
 void setPower(int power) {
   // WiFiClient client;
@@ -306,14 +308,14 @@ void setPower(int power) {
 bool checkValidData() {
   static uint32_t validTime = millis();
 
-  if (trottlePosition > 100 || trottlePosition < 0 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0) {
-    if (skipFirst && millis() - validTime > 60000 ) {
-      validTime = millis();
-      myBot.sendTo(userid, "trottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
-    } else if(validTime > millis()){
-      validTime = millis();
-    }
-    skipFirst = true;
+  if (trottlePosition > 100 || trottlePosition < -5 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0) {
+    // if (skipFirst && millis() - validTime > 60000 ) {
+    //   validTime = millis();
+    //   myBot.sendTo(userid, "trottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
+    // } else if(validTime > millis()){
+    //   validTime = millis();
+    // }
+    // skipFirst = true;
     return false;
   } else {
     return true;
@@ -605,8 +607,8 @@ void pushToFirebase() {
   if (Firebase.RTDB.getInt(&fbdo, "/UnixTime")) {
     if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
       uint32_t lastSeen = (fbdo.to<int>());
-      if (lastSeen != UnixTime) {
-        UnixTime = lastSeen;
+      if (lastSeen != compareUnixTime && compareUnixTime != 0) {
+        compareUnixTime = lastSeen;
         appRegulate = true;
         if (Firebase.RTDB.getInt(&fbdo, "/MaxPower")) {
           if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
