@@ -647,7 +647,7 @@ void firebaseReport() {
 }
 void monthGenerated() {
   int currentDay = getDayOfMonthFromUnixTime();
-  if (currentDay == 1 && day != currentDay) {
+  if (currentDay == 1 && day != currentDay && totalGenerated != 0) {
     Firebase.RTDB.setInt(&fbdo, "/monthStartGenerated", totalGenerated);
     day = currentDay;
   }
