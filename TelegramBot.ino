@@ -39,7 +39,7 @@ AsyncTelegram2 myBot(client);
 
 #include <Arduino.h>
 #if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
-SET_LOOP_TASK_STACK_SIZE(16*1024); // 16KB
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);  // 16KB
 #include <WiFi.h>
 #elif defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -117,9 +117,10 @@ bool skipFirst = false;
 bool appRegulate = false;
 bool firebase = true;
 bool kgyLock = true;
+bool regLock = true;
 bool isAlarm = false;
 uint32_t epochTime = 0;
-String reset = "";//String(ESP.getResetInfo()) + "\n";
+//String reset = "";  //String(ESP.getResetInfo()) + "\n";
 
 #define LED_BUILTIN 2
 // This sets Arduino Stack Size - comment this line to use default 8K stack size
@@ -127,7 +128,7 @@ String reset = "";//String(ESP.getResetInfo()) + "\n";
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);  // Настройка пина GPIO2 как выхода
   // initialize the Serial
-  Serial.begin(115200);
+  Serial.begin(9600);
   Serial.println("\nStarting TelegramBot...");
 
   WiFi.mode(WIFI_STA);
@@ -161,7 +162,7 @@ void setup() {
   Serial.print("\nTest Telegram connection... ");
   myBot.begin() ? Serial.println("OK") : Serial.println("NOK");
 
-  char welcome_msg[128];
+  char welcome_msg[48];
   snprintf(welcome_msg, 128, "BOT @%s is online", myBot.getBotName());
 
   // Send a message to specific user who has started your bot
@@ -172,12 +173,12 @@ void setup() {
   config.signer.tokens.legacy_token = DATABASE_SECRET;
 
   Firebase.reconnectNetwork(true);
-  fbdo.setBSSLBufferSize(4096 /* Rx buffer size in bytes from 512 - 16384 */, 1024 /* Tx buffer size in bytes from 512 - 16384 */);
+  fbdo.setBSSLBufferSize(512 /* Rx buffer size in bytes from 512 - 16384 */, 512 /* Tx buffer size in bytes from 512 - 16384 */);
   Firebase.begin(&config, &auth);
 
   ntpClient.update();
   epochTime = ntpClient.getEpochTime();
-  currentHour  = (epochTime / 3600) % 24;
+  currentHour = (epochTime / 3600) % 24;
   hours = currentHour;
 
   digitalWrite(LED_BUILTIN, false);
@@ -188,24 +189,21 @@ void loop() {
 
   static uint32_t hourTime = millis();
   if (millis() - hourTime > 20000 && firebase /*&& hourReport*/) {
-    //currentHour = ntpClient.getHours(); /*(ntpClient.getUnixTime() / 3600) % 24*/
-    //stamp.getDateTime(now)
-      blink(); 
-      monthGenerated();
-      pushToFirebase();
-      firebaseReport();
-      hourTime = millis();
-      //currentHour = (ntpClient.getUnixTime() / 3600) % 24;
+    blink();
+    monthGenerated();
+    pushToFirebase();
+    firebaseReport();
+    hourTime = millis();
   } else if (hourTime > millis()) {
     hourTime = millis();
   }
 
   static uint32_t ledTime = millis();
-  if (millis() - ledTime > 3000 && (firebase || regulate || appRegulate)) {
+  if (millis() - ledTime > 1000 && (firebase || regulate || appRegulate)) {
     //regulatePower();
-      blink(); 
-      getDate();
-      ledTime = millis();
+    blink();
+    getDate();
+    ledTime = millis();
     Watchdog.reset();
   } else if (ledTime > millis()) {
     ledTime = millis();
@@ -222,10 +220,11 @@ void loop() {
         hourReport = false;
         myBot.sendToChannel(channel, "Опция отчетности отключена", true);
       } else {
-        //ESP.restart();
-        ntpClient.update();
-        hours = ntpClient.getHours();  //(ntpClient.getUnixTime() / 3600) % 24;
-        currentHour = hours;
+        // app_start();
+        // ntpClient.update();
+        // epochTime = ntpClient.getEpochTime();
+        // currentHour = (epochTime / 3600) % 24;
+        // hours = currentHour;
         hourReport = true;
         myBot.sendToChannel(channel, "Опция отчетности включена", true);
       }
@@ -254,9 +253,9 @@ void loop() {
       }
       String message;
       stamp.getDateTime(getTime());
-      message = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) +":"+ String(stamp.minute) + ":"+ String(stamp.second) +"\n";
+      message = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) + ":" + String(stamp.minute) + ":" + String(stamp.second) + "\n";
       // message = uxTaskGetStackHighWaterMark(NULL) + "\n";
-      message += reset;
+      //message += reset;
       message += resultKGY;
       message += resultRegistrator;
       if (monthStartGenerated != 0) {
@@ -273,35 +272,17 @@ void loop() {
     }
   }
 }
+
+void app_start(){
+  //ESP.reset();
+} 
+
 void blink() {
   digitalWrite(LED_BUILTIN, false);
   delay(200);
   digitalWrite(LED_BUILTIN, true);
 }
 void setPower(int power) {
-  // WiFiClient client;
-  // if (!client.connect(serverIP, serverPort)) {
-  //   Serial.println("Connection failed.");
-  //   return;
-  // }
-  // transactionId = 5;
-  // uint8_t request[] = {
-  //   (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-  //   (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-  //   0, 0,                             // Protocol ID (0 для Modbus TCP)
-  //   0, 6,                             // Длина данных
-  //   1,                                // Адрес устройства Modbus
-  //   16,                               // Код функции (чтение Holding Register)
-  //   (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
-  //   (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
-  //   0, 1,                             // Количество регистров для записи (1)
-  //   2,                                // Колличество байт данных
-  //   (uint8_t)(power >> 8),            // Данные первый байт
-  //   (uint8_t)(power & 0xFF)           // Данные второй байт
-  // };
-  // client.write(request, sizeof(request));
-  // client.stop();
-  // delay(100);
   intPower = power;
   isPower = true;
 }
@@ -309,13 +290,7 @@ bool checkValidData() {
   static uint32_t validTime = millis();
 
   if (trottlePosition > 100 || trottlePosition < -5 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0) {
-    // if (skipFirst && millis() - validTime > 60000 ) {
-    //   validTime = millis();
-    //   myBot.sendTo(userid, "trottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
-    // } else if(validTime > millis()){
-    //   validTime = millis();
-    // }
-    // skipFirst = true;
+    Serial.println("\ntrottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
     return false;
   } else {
     return true;
@@ -332,28 +307,24 @@ void regulatePower() {
     if (opPr < 3) {
       (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
       lastRegulate = millis();
-      //blink();
     } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower) {
       checkActPower();
       checkThrottle();
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
       lastRegulate = millis();
-      //blink();
     } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && (maxPower - powerConstant >= reg) && trottlePosition < 90 && (appMaxPower - powerConstant >= reg)) {
       setPower(powerConstant + reg);
       lastRegulate = millis();
-      //blink();
     } else if (opPr > 5 && trottlePosition < 80 && ((millis() - powerUpTime) >= 300000) && maxPower - appMaxPower >= 10 && appMaxPower <= 1550) {
       appMaxPower += 10;
       powerUpTime = millis();
-      //blink();
     }
   } else if (powerActive <= 0 && powerConstant != 800) {
     setPower(800);
     appMaxPower = 1560;
     maxPower = 1560;
     myBot.sendToChannel(channel, "КГУ остановленно!! \nТак и задумано?", true);
-    //blink();
+
   } else if (lastRegulate > millis()) {
     lastRegulate = millis();
   }
@@ -365,18 +336,43 @@ void checkThrottle() {
   if (trottlePosition > 90) appMaxPower = powerConstant - 10;
 }
 void getDate() {
-  sendRegistratorRequest();
-  sendKGYRequest();
+  if (kgyLock == true) {
+    sendKGYRequest();
+    //Serial.println("\nsendKGYRequest...");
+  }
+  if (regLock == true) {
+    sendRegistratorRequest();
+    //Serial.println("\nsendRegistratorRequest...");
+  }
 }
 void sendRegistratorRequest() {
-  if (!clientRegistrator.connect(registratorIP, serverPort)) {
+  if (!clientRegistrator.connected() && !clientRegistrator.connect(registratorIP, serverPort)) {
+    Serial.println("\nclientRegistrator.connect ERROR...");
     opPr = 9999;  // Установка значения в 9999 при ошибке соединения
     resultRegistrator = "Ошибка соединения с регистратором!!! \nРегулирование невозможно.";
     return;
-  }
+  }else{
+    regLock = false;
+    Serial.println("\nclientRegistrator.onElseConnect...");
+    uint16_t transactionId = 7;
 
+    uint8_t request[] = {
+      static_cast<uint8_t>(transactionId >> 8),    // Старший байт Transaction ID
+      static_cast<uint8_t>(transactionId & 0xFF),  // Младший байт Transaction ID
+      0, 0,                                        // Protocol ID (0 для Modbus TCP)
+      0, 6,                                        // Длина данных
+      1,                                           // Адрес устройства Modbus
+      4,                                           // Код функции (чтение Holding Register)
+      0, 0,                                        // Старший и младший байты адреса регистра (0)
+      0, 12                                        // Количество регистров для чтения (12)
+    };
+    // Отправьте запрос
+    clientRegistrator.write(reinterpret_cast<const char *>(request), sizeof(request));
+  }
   // Создайте и отправьте запрос к регистратору
   clientRegistrator.onConnect([](void *arg, AsyncClient *c) {
+    regLock = false;
+    Serial.println("\nclientRegistrator.onConnect...");
     // Убедитесь, что transactionId определен
     uint16_t transactionId = 7;
 
@@ -395,6 +391,7 @@ void sendRegistratorRequest() {
   });
   // Установите обработчик ответа от регистратора
   clientRegistrator.onData([](void *arg, AsyncClient *c, void *data, size_t len) {
+    Serial.println("\nclientRegistrator.onData...");
     uint8_t *response = static_cast<uint8_t *>(data);  // Приведение типа указателя
     // Проверьте, что в ответе достаточно данных перед извлечением
     if (len >= 32) {
@@ -431,25 +428,48 @@ void sendRegistratorRequest() {
       resultRegistrator += "СН4 ВНС-№1: " + String(floatCH4_1) + " %\n";
       resultRegistrator += "СН4 ВНС-№2: " + String(floatCH4_2) + " %\n";
     }
-    c->close(true);
+    //c->close(false);
+    regLock = true;
   });
   clientRegistrator.onError([](void *arg, AsyncClient *c, int8_t error) {
     opPr = 9999;  // Установка значения в 9999 при ошибке соединения
     resultRegistrator = "Ошибка соединения с регистратором!!! \nРегулирование невозможно.";
-    //c->close(true);
+    Serial.println("\nclientRegistrator.onError ERROR...");
+  });
+  clientRegistrator.onDisconnect([](void *arg, AsyncClient *c) {
+    regLock = true;
+    Serial.println("\nclientRegistrator.onDisconect...");
   });
 }
+
 void sendKGYRequest() {
-  if (kgyLock && !clientKGY.connect(serverIP, serverPort)) {
-    Serial.println("Connection to KGY failed.");
+  if (!clientKGY.connected() && !clientKGY.connect(serverIP, serverPort)) {
+    Serial.println("clientKGY.connect ERROR...");
     trottlePosition = 9999;
     powerConstant = 9999;
     powerActive = 9999;
     resultKGY = "Ошибка подключения к КГУ!!! \nРегулирование невозможно.";
     return;
+  }else{
+    Serial.println("clientKGY.onElseConnect...");
+    kgyLock = false;
+    transactionId = 1;
+    uint8_t request[] = {
+      (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+      (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+      0, 0,                             // Protocol ID (0 для Modbus TCP)
+      0, 6,                             // Длина данных
+      1,                                // Адрес устройства Modbus
+      3,                                // Код функции (чтение Holding Register)
+      (uint8_t)(9204 >> 8),             // Старший байт адреса регистра
+      (uint8_t)(9204 & 0xFF),           // Младший байт адреса регистра
+      0, 1                              // Количество регистров для чтения (1)
+    };
+    clientKGY.write(reinterpret_cast<const char *>(request), sizeof(request));
   }
   // Создайте и отправьте запрос к КГУ
   clientKGY.onConnect([](void *arg, AsyncClient *c) {
+    Serial.println("clientKGY.onConnect...");
     kgyLock = false;
     transactionId = 1;
     uint8_t request[] = {
@@ -468,110 +488,115 @@ void sendKGYRequest() {
   });
   // Установите обработчик ответа от КГУ
   clientKGY.onData([](void *arg, AsyncClient *c, void *data, size_t len) {
-    //uint8_t *response = static_cast<uint8_t *>(data);
-    uint8_t *response = static_cast<uint8_t *>(data);
-    //trottlePosition = (((response[8] << 8) | response[9]) / 10);
-    uint8_t transactionId = (((response[0] << 8) | response[1]));
-    if (transactionId == 1) {
-      trottlePosition = (((response[9] << 8) | response[10]) / 10);
-      resultKGY = "Положение дросселя КГУ: " + String(trottlePosition) + " %\n";
+    Serial.println("clientKGY.onData...");
+    if (len >= 10) {
+      uint8_t *response = static_cast<uint8_t *>(data);
+      uint8_t transactionId = (((response[0] << 8) | response[1]));
+      if (transactionId == 1) {
+        trottlePosition = (((response[9] << 8) | response[10]) / 10);
+        resultKGY = "Положение дросселя КГУ: " + String(trottlePosition) + " %\n";
 
-      transactionId = 2;
-      uint8_t request[] = {
-        (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-        (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-        0, 0,                             // Protocol ID (0 для Modbus TCP)
-        0, 6,                             // Длина данных
-        1,                                // Адрес устройства Modbus
-        3,                                // Код функции (чтение Holding Register)
-        (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
-        (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
-        0, 1                              // Количество регистров для чтения (1)
-      };
-      c->write(reinterpret_cast<const char *>(request), sizeof(request));
-    } else if (transactionId == 2) {
-      powerConstant = (response[9] << 8) | response[10];
-      resultKGY += "Заданная мощность: " + String(powerConstant) + " kW\n";
-
-      transactionId = 3;
-      uint8_t request[] = {
-        (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-        (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-        0, 0,                             // Protocol ID (0 для Modbus TCP)
-        0, 6,                             // Длина данных
-        1,                                // Адрес устройства Modbus
-        3,                                // Код функции (чтение Holding Register)
-        (uint8_t)(8202 >> 8),             // Старший байт адреса регистра
-        (uint8_t)(8202 & 0xFF),           // Младший байт адреса регистра
-        0, 1                              // Количество регистров для чтения (1)
-      };
-      c->write(reinterpret_cast<const char *>(request), sizeof(request));
-    } else if (transactionId == 3) {
-      powerActive = (response[9] << 8) | response[10];
-      resultKGY += "Активная мощность: " + String(powerActive) + " kW\n";
-
-      transactionId = 9;
-      uint8_t request[] = {
-        (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-        (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-        0, 0,                             // Protocol ID (0 для Modbus TCP)
-        0, 6,                             // Длина данных
-        1,                                // Адрес устройства Modbus
-        3,                                // Код функции (чтение Holding Register)
-        (uint8_t)(8235 >> 8),             // Старший байт адреса регистра
-        (uint8_t)(8235 & 0xFF),           // Младший байт адреса регистра
-        0, 2                              // Количество регистров для чтения (1)
-      };
-      c->write(reinterpret_cast<const char *>(request), sizeof(request));
-    } else if (transactionId == 9) {
-      short values = (response[9] << 8) | response[10];
-
-      boolean bit7 = ((values >> 7) & 1) == 0;  // alarm bit
-      boolean bit8 = ((values >> 8) & 1) == 0;  // error bit
-
-      isAlarm = (bit7 | bit8);
-
-      transactionId = 6;
-      uint8_t request[] = {
-        (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-        (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-        0, 0,                             // Protocol ID (0 для Modbus TCP)
-        0, 6,                             // Длина данных
-        1,                                // Адрес устройства Modbus
-        3,                                // Код функции (чтение Holding Register)
-        (uint8_t)(8205 >> 8),             // Старший байт адреса регистра
-        (uint8_t)(8205 & 0xFF),           // Младший байт адреса регистра
-        0, 2                              // Количество регистров для чтения (1)
-      };
-      c->write(reinterpret_cast<const char *>(request), sizeof(request));
-    } else if (transactionId == 6) {
-      totalGenerated = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
-
-      regulatePower();
-
-      if (isPower) {
-        isPower = false;
-        transactionId = 5;
+        transactionId = 2;
         uint8_t request[] = {
           (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
           (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
           0, 0,                             // Protocol ID (0 для Modbus TCP)
           0, 6,                             // Длина данных
           1,                                // Адрес устройства Modbus
-          16,                               // Код функции (чтение Holding Register)
+          3,                                // Код функции (чтение Holding Register)
           (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
           (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
-          0, 1,                             // Количество регистров для записи (1)
-          2,                                // Колличество байт данных
-          (uint8_t)(intPower >> 8),         // Данные первый байт
-          (uint8_t)(intPower & 0xFF)        // Данные второй байт
+          0, 1                              // Количество регистров для чтения (1)
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      } else {
-        c->close(true);
+      } else if (transactionId == 2) {
+        powerConstant = (response[9] << 8) | response[10];
+        resultKGY += "Заданная мощность: " + String(powerConstant) + " kW\n";
+
+        transactionId = 3;
+        uint8_t request[] = {
+          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+          0, 0,                             // Protocol ID (0 для Modbus TCP)
+          0, 6,                             // Длина данных
+          1,                                // Адрес устройства Modbus
+          3,                                // Код функции (чтение Holding Register)
+          (uint8_t)(8202 >> 8),             // Старший байт адреса регистра
+          (uint8_t)(8202 & 0xFF),           // Младший байт адреса регистра
+          0, 1                              // Количество регистров для чтения (1)
+        };
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      } else if (transactionId == 3) {
+        powerActive = (response[9] << 8) | response[10];
+        resultKGY += "Активная мощность: " + String(powerActive) + " kW\n";
+
+        transactionId = 9;
+        uint8_t request[] = {
+          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+          0, 0,                             // Protocol ID (0 для Modbus TCP)
+          0, 6,                             // Длина данных
+          1,                                // Адрес устройства Modbus
+          3,                                // Код функции (чтение Holding Register)
+          (uint8_t)(8235 >> 8),             // Старший байт адреса регистра
+          (uint8_t)(8235 & 0xFF),           // Младший байт адреса регистра
+          0, 2                              // Количество регистров для чтения (1)
+        };
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      } else if (transactionId == 9) {
+        short values = (response[9] << 8) | response[10];
+
+        boolean bit7 = ((values >> 7) & 1) == 0;  // alarm bit
+        boolean bit8 = ((values >> 8) & 1) == 0;  // error bit
+
+        isAlarm = (bit7 | bit8);
+
+        transactionId = 6;
+        uint8_t request[] = {
+          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+          0, 0,                             // Protocol ID (0 для Modbus TCP)
+          0, 6,                             // Длина данных
+          1,                                // Адрес устройства Modbus
+          3,                                // Код функции (чтение Holding Register)
+          (uint8_t)(8205 >> 8),             // Старший байт адреса регистра
+          (uint8_t)(8205 & 0xFF),           // Младший байт адреса регистра
+          0, 2                              // Количество регистров для чтения (1)
+        };
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      } else if (transactionId == 6) {
+        totalGenerated = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
+
+        regulatePower();
+
+        if (isPower) {
+          isPower = false;
+          transactionId = 5;
+          uint8_t request[] = {
+            (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+            (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+            0, 0,                             // Protocol ID (0 для Modbus TCP)
+            0, 6,                             // Длина данных
+            1,                                // Адрес устройства Modbus
+            16,                               // Код функции (чтение Holding Register)
+            (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
+            (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
+            0, 1,                             // Количество регистров для записи (1)
+            2,                                // Колличество байт данных
+            (uint8_t)(intPower >> 8),         // Данные первый байт
+            (uint8_t)(intPower & 0xFF)        // Данные второй байт
+          };
+          c->write(reinterpret_cast<const char *>(request), sizeof(request));
+        } else {
+          //c->close(false);
+          kgyLock = true;
+          Serial.println("clientKGY.CLOSE no regulate...");
+        }
+      } else if (transactionId == 5) {
+        //c->close(false);
+        kgyLock = true;
+        Serial.println("clientKGY.CLOSE after regulate...");
       }
-    } else if (transactionId == 5) {
-      c->close(true);
     }
   });
   clientKGY.onError([](void *arg, AsyncClient *c, int8_t error) {
@@ -581,12 +606,11 @@ void sendKGYRequest() {
     totalGenerated = 0;
     resultKGY = "Ошибка получения данных с КГУ!!! \nРегулирование невозможно.\n";
     resultKGY += String(error) + " error code \n";
-    //resultKGY = errorToString(err_t getCloseError(void) const { return _errorTracker->getCloseError();});
-    //c->close(true);
-    //kgyLock = true;
+    Serial.println("clientKGY.onError ERROR...");
   });
   clientKGY.onDisconnect([](void *arg, AsyncClient *c) {
     kgyLock = true;
+    Serial.println("clientKGY.onDisconect...");
   });
 }
 void pushToFirebase() {
@@ -607,9 +631,11 @@ void pushToFirebase() {
   if (Firebase.RTDB.getInt(&fbdo, "/UnixTime")) {
     if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
       uint32_t lastSeen = (fbdo.to<int>());
-      if (lastSeen != compareUnixTime && compareUnixTime != 0) {
+      if (lastSeen != compareUnixTime) {
+        if (compareUnixTime != 0) {
+          appRegulate = true;
+        }
         compareUnixTime = lastSeen;
-        appRegulate = true;
         if (Firebase.RTDB.getInt(&fbdo, "/MaxPower")) {
           if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
             maxPower = (fbdo.to<int>());
@@ -665,8 +691,8 @@ int getDayOfMonthFromUnixTime() {
   return stamp.day;
 }
 
-uint32_t getTime(){
-  uint32_t now  = (millis()/1000) + epochTime;
+uint32_t getTime() {
+  uint32_t now = (millis() / 1000) + epochTime;
   currentHour = (now / 3600) % 24;
   return now;
-  }
+}
