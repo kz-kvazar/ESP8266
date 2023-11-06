@@ -224,7 +224,7 @@ void loop() {
         // ntpClient.update();
         // epochTime = ntpClient.getEpochTime();
         // currentHour = (epochTime / 3600) % 24;
-        // hours = currentHour;
+        hours = currentHour;
         hourReport = true;
         myBot.sendToChannel(channel, "Опция отчетности включена", true);
       }
