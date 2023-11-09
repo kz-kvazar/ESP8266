@@ -107,7 +107,12 @@ int day = 32;
 int intPower = 0;
 bool isPower = false;
 long monthStartGenerated = 0;
+int cleanOil = 0;
+int avgTemp = 0;
+float resTemp = 0;
 
+const int ARRAY_SIZE = 45;
+int temp[ARRAY_SIZE] = { 0 };
 
 int hours;
 int currentHour;
@@ -220,10 +225,6 @@ void loop() {
         hourReport = false;
         myBot.sendToChannel(channel, "Опция отчетности отключена", true);
       } else {
-        // app_start();
-        // ntpClient.update();
-        // epochTime = ntpClient.getEpochTime();
-        // currentHour = (epochTime / 3600) % 24;
         hours = currentHour;
         hourReport = true;
         myBot.sendToChannel(channel, "Опция отчетности включена", true);
@@ -273,10 +274,6 @@ void loop() {
   }
 }
 
-void app_start(){
-  //ESP.reset();
-} 
-
 void blink() {
   digitalWrite(LED_BUILTIN, false);
   delay(200);
@@ -303,8 +300,8 @@ void regulatePower() {
   if ((!regulate && !appRegulate) || !checkValidData()) return;
 
   if (powerActive > 0 && millis() - lastRegulate > 20000) {
-    (opPr > 6 && powerActive < 1350) ? reg = 20 : reg = 10;
-    if (opPr < 3) {
+    (opPr > 6 && powerActive < 1250) ? reg = 20 : reg = 10;
+    if (opPr < 3 || avgTemp > 470) {
       (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
       lastRegulate = millis();
     } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower) {
@@ -351,7 +348,7 @@ void sendRegistratorRequest() {
     opPr = 9999;  // Установка значения в 9999 при ошибке соединения
     resultRegistrator = "Ошибка соединения с регистратором!!! \nРегулирование невозможно.";
     return;
-  }else{
+  } else {
     regLock = false;
     Serial.println("\nclientRegistrator.onElseConnect...");
     uint16_t transactionId = 7;
@@ -450,7 +447,7 @@ void sendKGYRequest() {
     powerActive = 9999;
     resultKGY = "Ошибка подключения к КГУ!!! \nРегулирование невозможно.";
     return;
-  }else{
+  } else {
     Serial.println("clientKGY.onElseConnect...");
     kgyLock = false;
     transactionId = 1;
@@ -567,6 +564,55 @@ void sendKGYRequest() {
       } else if (transactionId == 6) {
         totalGenerated = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
 
+        transactionId = 4;
+        uint8_t request[] = {
+          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+          0, 0,                             // Protocol ID (0 для Modbus TCP)
+          0, 6,                             // Длина данных
+          1,                                // Адрес устройства Modbus
+          3,                                // Код функции (чтение Holding Register)
+          (uint8_t)(9620 >> 8),             // Старший байт адреса регистра
+          (uint8_t)(9620 & 0xFF),           // Младший байт адреса регистра
+          0, 2                              // Количество регистров для чтения (1)
+        };
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      } else if (transactionId == 4) {
+        avgTemp = (response[9] << 8) | response[10];
+
+        transactionId = 8;
+        uint8_t request[] = {
+          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+          0, 0,                             // Protocol ID (0 для Modbus TCP)
+          0, 6,                             // Длина данных
+          1,                                // Адрес устройства Modbus
+          3,                                // Код функции (чтение Holding Register)
+          (uint8_t)(9157 >> 8),             // Старший байт адреса регистра
+          (uint8_t)(9157 & 0xFF),           // Младший байт адреса регистра
+          0, 2                              // Количество регистров для чтения (1)
+        };
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      } else if (transactionId == 8) {
+        cleanOil = (response[9] << 8) | response[10];
+
+        transactionId = 10;
+        uint8_t request[] = {
+          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
+          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
+          0, 0,                             // Protocol ID (0 для Modbus TCP)
+          0, 6,                             // Длина данных
+          1,                                // Адрес устройства Modbus
+          3,                                // Код функции (чтение Holding Register)
+          (uint8_t)(9206 >> 8),             // Старший байт адреса регистра
+          (uint8_t)(9206 & 0xFF),           // Младший байт адреса регистра
+          0, 2                              // Количество регистров для чтения (1)
+        };
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      } else if (transactionId == 10) {
+        resTemp = (response[9] << 8) | response[10];
+        resTemp /= 10;
+
         regulatePower();
 
         if (isPower) {
@@ -617,18 +663,28 @@ void pushToFirebase() {
   if (!checkValidData()) {
     return;
   }
-  Firebase.RTDB.setFloat(&fbdo, "/opPresher", opPr);
-  Firebase.RTDB.setFloat(&fbdo, "/trottlePosition", trottlePosition);
-  Firebase.RTDB.setInt(&fbdo, "/powerConstant", powerConstant);
-  Firebase.RTDB.setInt(&fbdo, "/powerActive", powerActive);
-  Firebase.RTDB.setFloat(&fbdo, "/CH4_1", CH4_1p);
-  Firebase.RTDB.setFloat(&fbdo, "/CH4_2", CH4_2p);
-  Firebase.RTDB.setFloat(&fbdo, "/gtsPresher", gtsPr);
-  Firebase.RTDB.setFloat(&fbdo, "/kgyPresher", kgyPr);
-  Firebase.RTDB.setInt(&fbdo, "/totalActivePower", totalGenerated);
-  Firebase.RTDB.setBool(&fbdo, "/alarm", isAlarm);
 
-  if (Firebase.RTDB.getInt(&fbdo, "/UnixTime")) {
+  Firebase.RTDB.setFloat(&fbdo, "now/opPresher", opPr);
+  Firebase.RTDB.setFloat(&fbdo, "now/trottlePosition", trottlePosition);
+  Firebase.RTDB.setInt(&fbdo, "now/powerConstant", powerConstant);
+  Firebase.RTDB.setInt(&fbdo, "now/powerActive", powerActive);
+  Firebase.RTDB.setFloat(&fbdo, "now/CH4_1", CH4_1p);
+  Firebase.RTDB.setFloat(&fbdo, "now/CH4_2", CH4_2p);
+  Firebase.RTDB.setFloat(&fbdo, "now/gtsPresher", gtsPr);
+  Firebase.RTDB.setFloat(&fbdo, "now/kgyPresher", kgyPr);
+  Firebase.RTDB.setInt(&fbdo, "now/totalActivePower", totalGenerated);
+  Firebase.RTDB.setBool(&fbdo, "now/alarm", isAlarm);
+  Firebase.RTDB.setInt(&fbdo, "now/cleanOil", cleanOil);
+  Firebase.RTDB.setInt(&fbdo, "now/avgTemp", avgTemp);
+  Firebase.RTDB.setFloat(&fbdo, "now/resTemp", resTemp);
+  Firebase.RTDB.setInt(&fbdo, "now/serverUnixTime20", getTime());
+
+  updateAvgTemp(avgTemp);
+  for (int i = 0; i < ARRAY_SIZE; ++i) {
+    Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
+  }
+
+  if (Firebase.RTDB.getInt(&fbdo, "now/UnixTime")) {
     if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
       uint32_t lastSeen = (fbdo.to<int>());
       if (lastSeen != compareUnixTime) {
@@ -636,7 +692,7 @@ void pushToFirebase() {
           appRegulate = true;
         }
         compareUnixTime = lastSeen;
-        if (Firebase.RTDB.getInt(&fbdo, "/MaxPower")) {
+        if (Firebase.RTDB.getInt(&fbdo, "now/MaxPower")) {
           if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
             maxPower = (fbdo.to<int>());
           }
@@ -660,6 +716,7 @@ void firebaseReport() {
     String date = "/HourReport/" + String(ntpClient.getEpochTime());
     hours = currentHour;
 
+    Firebase.RTDB.setFloat(&fbdo, date + "/opPresher", opPr);
     Firebase.RTDB.setFloat(&fbdo, date + "/trottlePosition", trottlePosition);
     Firebase.RTDB.setInt(&fbdo, date + "/powerConstant", powerConstant);
     Firebase.RTDB.setInt(&fbdo, date + "/powerActive", powerActive);
@@ -669,19 +726,24 @@ void firebaseReport() {
     Firebase.RTDB.setFloat(&fbdo, date + "/kgyPresher", kgyPr);
     Firebase.RTDB.setInt(&fbdo, date + "/totalActivePower", totalGenerated);
     Firebase.RTDB.setString(&fbdo, date + "/date", now);
+    Firebase.RTDB.setInt(&fbdo, date + "/cleanOil", cleanOil);
+    Firebase.RTDB.setInt(&fbdo, date + "/avgTemp", avgTemp);
+    Firebase.RTDB.setFloat(&fbdo, date + "/resTemp", resTemp);
   }
 }
 void monthGenerated() {
   int currentDay = getDayOfMonthFromUnixTime();
   if (currentDay == 1 && day != currentDay && totalGenerated != 0) {
-    Firebase.RTDB.setInt(&fbdo, "/monthStartGenerated", totalGenerated);
+    Firebase.RTDB.setInt(&fbdo, "now/monthStartGenerated", totalGenerated);
     day = currentDay;
   }
   if (monthStartGenerated == 0) {
-    if (Firebase.RTDB.getInt(&fbdo, "/monthStartGenerated")) {
+    if (Firebase.RTDB.getInt(&fbdo, "now/monthStartGenerated")) {
       if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
         monthStartGenerated = (fbdo.to<int>());
       }
+    } else if (totalGenerated != 0) {
+      Firebase.RTDB.setInt(&fbdo, "now/monthStartGenerated", totalGenerated);
     }
   }
 }
@@ -695,4 +757,14 @@ uint32_t getTime() {
   uint32_t now = (millis() / 1000) + epochTime;
   currentHour = (now / 3600) % 24;
   return now;
+}
+
+void updateAvgTemp(int avgTemp) {
+  if (temp[0] != 0) {
+    for (int i = ARRAY_SIZE - 1; i > 0; --i) {
+      temp[i] = temp[i - 1];
+    }
+  }
+  if(avgTemp == 0) avgTemp = 1;
+  temp[0] = avgTemp;
 }
