@@ -113,6 +113,7 @@ float resTemp = 0;
 
 const int ARRAY_SIZE = 45;
 int temp[ARRAY_SIZE] = { 0 };
+uint8_t request[] = { 0 };
 
 int hours;
 int currentHour;
@@ -351,9 +352,9 @@ void sendRegistratorRequest() {
   } else {
     regLock = false;
     Serial.println("\nclientRegistrator.onElseConnect...");
-    uint16_t transactionId = 7;
+    transactionId = 7;
 
-    uint8_t request[] = {
+    request[] = {
       static_cast<uint8_t>(transactionId >> 8),    // Старший байт Transaction ID
       static_cast<uint8_t>(transactionId & 0xFF),  // Младший байт Transaction ID
       0, 0,                                        // Protocol ID (0 для Modbus TCP)
@@ -371,9 +372,9 @@ void sendRegistratorRequest() {
     regLock = false;
     Serial.println("\nclientRegistrator.onConnect...");
     // Убедитесь, что transactionId определен
-    uint16_t transactionId = 7;
-
-    uint8_t request[] = {
+    
+    transactionId = 7;
+    request[] = {
       static_cast<uint8_t>(transactionId >> 8),    // Старший байт Transaction ID
       static_cast<uint8_t>(transactionId & 0xFF),  // Младший байт Transaction ID
       0, 0,                                        // Protocol ID (0 для Modbus TCP)
@@ -451,7 +452,7 @@ void sendKGYRequest() {
     Serial.println("clientKGY.onElseConnect...");
     kgyLock = false;
     transactionId = 1;
-    uint8_t request[] = {
+    request[] = {
       (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
       (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
       0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -469,7 +470,7 @@ void sendKGYRequest() {
     Serial.println("clientKGY.onConnect...");
     kgyLock = false;
     transactionId = 1;
-    uint8_t request[] = {
+    request[] = {
       (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
       (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
       0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -494,7 +495,7 @@ void sendKGYRequest() {
         resultKGY = "Положение дросселя КГУ: " + String(trottlePosition) + " %\n";
 
         transactionId = 2;
-        uint8_t request[] = {
+        request[] = {
           (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
           (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
           0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -511,7 +512,7 @@ void sendKGYRequest() {
         resultKGY += "Заданная мощность: " + String(powerConstant) + " kW\n";
 
         transactionId = 3;
-        uint8_t request[] = {
+        request[] = {
           (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
           (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
           0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -528,7 +529,7 @@ void sendKGYRequest() {
         resultKGY += "Активная мощность: " + String(powerActive) + " kW\n";
 
         transactionId = 9;
-        uint8_t request[] = {
+        request[] = {
           (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
           (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
           0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -549,7 +550,7 @@ void sendKGYRequest() {
         isAlarm = (bit7 | bit8);
 
         transactionId = 6;
-        uint8_t request[] = {
+        request[] = {
           (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
           (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
           0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -565,7 +566,7 @@ void sendKGYRequest() {
         totalGenerated = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
 
         transactionId = 4;
-        uint8_t request[] = {
+        request[] = {
           (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
           (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
           0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -579,9 +580,9 @@ void sendKGYRequest() {
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionId == 4) {
         avgTemp = (response[9] << 8) | response[10];
-
+        updateAvgTemp(avgTemp);
         transactionId = 8;
-        uint8_t request[] = {
+        request[] = {
           (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
           (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
           0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -597,7 +598,7 @@ void sendKGYRequest() {
         cleanOil = (response[9] << 8) | response[10];
 
         transactionId = 10;
-        uint8_t request[] = {
+        request[] = {
           (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
           (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
           0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -618,7 +619,7 @@ void sendKGYRequest() {
         if (isPower) {
           isPower = false;
           transactionId = 5;
-          uint8_t request[] = {
+          request[] = {
             (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
             (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
             0, 0,                             // Protocol ID (0 для Modbus TCP)
@@ -679,7 +680,7 @@ void pushToFirebase() {
   Firebase.RTDB.setFloat(&fbdo, "now/resTemp", resTemp);
   Firebase.RTDB.setInt(&fbdo, "now/serverUnixTime20", getTime());
 
-  updateAvgTemp(avgTemp);
+  //updateAvgTemp(avgTemp);
   for (int i = 0; i < ARRAY_SIZE; ++i) {
     Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
   }
@@ -760,6 +761,7 @@ uint32_t getTime() {
 }
 
 void updateAvgTemp(int avgTemp) {
+  if(temp > 1000 || temp < -40) return;
   if (temp[0] != 0) {
     for (int i = ARRAY_SIZE - 1; i > 0; --i) {
       temp[i] = temp[i - 1];
