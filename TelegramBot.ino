@@ -68,6 +68,7 @@ const IPAddress registratorIP(10, 70, 0, 28);  // IP-адрес сервера M
 
 const int serverPort = 502;  // Порт Modbus
 int transactionId = 0;       // Уникальный идентификатор транзакции
+uint8_t transactionIdResponse = 0;
 
 AsyncClient clientRegistrator;
 AsyncClient clientKGY;
@@ -87,8 +88,8 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
-unsigned long dataMillis = 0;
-int count = 0;
+//unsigned long dataMillis = 0;
+uint8_t count = 0;
 
 uint16_t powerActive = 9999;
 uint16_t trottlePosition = 9999;
@@ -111,7 +112,7 @@ int cleanOil = 0;
 int avgTemp = 0;
 float resTemp = 0;
 
-const int ARRAY_SIZE = 45;
+const uint8_t ARRAY_SIZE = 45;
 int temp[ARRAY_SIZE] = { 0 };
 uint8_t request[] = { 0 };
 
@@ -188,7 +189,7 @@ void setup() {
   hours = currentHour;
 
   digitalWrite(LED_BUILTIN, false);
-  int countdownMS = Watchdog.enable(20000);
+  int downMS = Watchdog.enable(20000);
 }
 
 void loop() {
@@ -394,37 +395,42 @@ void sendRegistratorRequest() {
     // Проверьте, что в ответе достаточно данных перед извлечением
     if (len >= 32) {
       // Извлекаем данные из ответа правильным образом
-      uint32_t opPresher = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
-      float floatOpPresher;
-      memcpy(&floatOpPresher, &opPresher, sizeof(floatOpPresher));
-      floatOpPresher = round(floatOpPresher * 10) / 10;
-      opPr = floatOpPresher;
+      // uint32_t opPresher = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
+      // float floatOpPresher;
+      // memcpy(&floatOpPresher, &opPresher, sizeof(floatOpPresher));
+      // floatOpPresher = round(floatOpPresher * 10) / 10;
+      // opPr = floatOpPresher;
+      opPr = round(*reinterpret_cast<uint32_t*>(&response[9]) * 10.0f) / 10.0f;
 
-      uint32_t GTS = ((uint32_t)response[17] << 24) | ((uint32_t)response[18] << 16) | ((uint32_t)response[19] << 8) | (uint32_t)response[20];
-      float floatGTS;
-      memcpy(&floatGTS, &GTS, sizeof(floatGTS));
-      gtsPr = round(floatGTS * 10) / 10;
+      // uint32_t GTS = ((uint32_t)response[17] << 24) | ((uint32_t)response[18] << 16) | ((uint32_t)response[19] << 8) | (uint32_t)response[20];
+      // float floatGTS;
+      // memcpy(&floatGTS, &GTS, sizeof(floatGTS));
+      // gtsPr = round(floatGTS * 10) / 10;
+      gtsPr = round(*reinterpret_cast<uint32_t*>(&response[17]) * 10.0f) / 10.0f;
+      
+      // uint32_t KY = ((uint32_t)response[21] << 24) | ((uint32_t)response[22] << 16) | ((uint32_t)response[23] << 8) | (uint32_t)response[24];
+      // float floatKY;
+      // memcpy(&floatKY, &KY, sizeof(floatKY));
+      // kgyPr = round(floatKY * 10) / 10;
+      kgyPr = round(*reinterpret_cast<uint32_t*>(&response[21]) * 10.0f) / 10.0f;
+      
+      // uint32_t CH4_1 = ((uint32_t)response[25] << 24) | ((uint32_t)response[26] << 16) | ((uint32_t)response[27] << 8) | (uint32_t)response[28];
+      // float floatCH4_1;
+      // memcpy(&floatCH4_1, &CH4_1, sizeof(floatCH4_1));
+      // CH4_1p = round(floatCH4_1 * 10) / 10;
+      CH4_1p = round(*reinterpret_cast<uint32_t*>(&response[25]) * 10.0f) / 10.0f;
 
-      uint32_t KY = ((uint32_t)response[21] << 24) | ((uint32_t)response[22] << 16) | ((uint32_t)response[23] << 8) | (uint32_t)response[24];
-      float floatKY;
-      memcpy(&floatKY, &KY, sizeof(floatKY));
-      kgyPr = round(floatKY * 10) / 10;
+      // uint32_t CH4_2 = ((uint32_t)response[29] << 24) | ((uint32_t)response[30] << 16) | ((uint32_t)response[31] << 8) | (uint32_t)response[32];
+      // float floatCH4_2;
+      // memcpy(&floatCH4_2, &CH4_2, sizeof(floatCH4_2));
+      // CH4_2p = round(floatCH4_2 * 10) / 10;
+      CH4_2p = round(*reinterpret_cast<uint32_t*>(&response[25]) * 10.0f) / 10.0f;
 
-      uint32_t CH4_1 = ((uint32_t)response[25] << 24) | ((uint32_t)response[26] << 16) | ((uint32_t)response[27] << 8) | (uint32_t)response[28];
-      float floatCH4_1;
-      memcpy(&floatCH4_1, &CH4_1, sizeof(floatCH4_1));
-      CH4_1p = round(floatCH4_1 * 10) / 10;
-
-      uint32_t CH4_2 = ((uint32_t)response[29] << 24) | ((uint32_t)response[30] << 16) | ((uint32_t)response[31] << 8) | (uint32_t)response[32];
-      float floatCH4_2;
-      memcpy(&floatCH4_2, &CH4_2, sizeof(floatCH4_2));
-      CH4_2p = round(floatCH4_2 * 10) / 10;
-
-      resultRegistrator = "Давление перед GTS: " + String(floatGTS) + " kPa\n";
-      resultRegistrator += "Давление перед КГУ: " + String(floatKY) + " kPa\n";
-      resultRegistrator += "Давление после ОП: " + String(floatOpPresher) + " kPa\n";
-      resultRegistrator += "СН4 ВНС-№1: " + String(floatCH4_1) + " %\n";
-      resultRegistrator += "СН4 ВНС-№2: " + String(floatCH4_2) + " %\n";
+      resultRegistrator = "Давление перед GTS: " + String(gtsPr) + " kPa\n";
+      resultRegistrator += "Давление перед КГУ: " + String(kgyPr) + " kPa\n";
+      resultRegistrator += "Давление после ОП: " + String(opPr) + " kPa\n";
+      resultRegistrator += "СН4 ВНС-№1: " + String(CH4_1p) + " %\n";
+      resultRegistrator += "СН4 ВНС-№2: " + String(CH4_2p) + " %\n";
     }
     //c->close(false);
     regLock = true;
@@ -489,8 +495,9 @@ void sendKGYRequest() {
     Serial.println("clientKGY.onData...");
     if (len >= 10) {
       uint8_t *response = static_cast<uint8_t *>(data);
-      uint8_t transactionId = (((response[0] << 8) | response[1]));
-      if (transactionId == 1) {
+      transactionIdResponse = 0;
+      transactionIdResponse = (((response[0] << 8) | response[1]));
+      if (transactionIdResponse == 1) {
         trottlePosition = (((response[9] << 8) | response[10]) / 10);
         resultKGY = "Положение дросселя КГУ: " + String(trottlePosition) + " %\n";
 
@@ -507,7 +514,7 @@ void sendKGYRequest() {
           0, 1                              // Количество регистров для чтения (1)
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      } else if (transactionId == 2) {
+      } else if (transactionIdResponse == 2) {
         powerConstant = (response[9] << 8) | response[10];
         resultKGY += "Заданная мощность: " + String(powerConstant) + " kW\n";
 
@@ -524,7 +531,7 @@ void sendKGYRequest() {
           0, 1                              // Количество регистров для чтения (1)
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      } else if (transactionId == 3) {
+      } else if (transactionIdResponse == 3) {
         powerActive = (response[9] << 8) | response[10];
         resultKGY += "Активная мощность: " + String(powerActive) + " kW\n";
 
@@ -541,7 +548,7 @@ void sendKGYRequest() {
           0, 2                              // Количество регистров для чтения (1)
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      } else if (transactionId == 9) {
+      } else if (transactionIdResponse == 9) {
         short values = (response[9] << 8) | response[10];
 
         boolean bit7 = ((values >> 7) & 1) == 0;  // alarm bit
@@ -562,7 +569,7 @@ void sendKGYRequest() {
           0, 2                              // Количество регистров для чтения (1)
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      } else if (transactionId == 6) {
+      } else if (transactionIdResponse == 6) {
         totalGenerated = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
 
         transactionId = 4;
@@ -578,7 +585,7 @@ void sendKGYRequest() {
           0, 2                              // Количество регистров для чтения (1)
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      } else if (transactionId == 4) {
+      } else if (transactionIdResponse == 4) {
         avgTemp = (response[9] << 8) | response[10];
         updateAvgTemp(avgTemp);
         transactionId = 8;
@@ -594,7 +601,7 @@ void sendKGYRequest() {
           0, 2                              // Количество регистров для чтения (1)
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      } else if (transactionId == 8) {
+      } else if (transactionIdResponse == 8) {
         cleanOil = (response[9] << 8) | response[10];
 
         transactionId = 10;
@@ -610,7 +617,7 @@ void sendKGYRequest() {
           0, 2                              // Количество регистров для чтения (1)
         };
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      } else if (transactionId == 10) {
+      } else if (transactionIdResponse == 10) {
         resTemp = (response[9] << 8) | response[10];
         resTemp /= 10;
 
@@ -681,9 +688,9 @@ void pushToFirebase() {
   Firebase.RTDB.setInt(&fbdo, "now/serverUnixTime20", getTime());
 
   //updateAvgTemp(avgTemp);
-  for (int i = 0; i < ARRAY_SIZE; ++i) {
-    Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
-  }
+  // for (int i = 0; i < ARRAY_SIZE; ++i) {
+  //   Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
+  // }
 
   if (Firebase.RTDB.getInt(&fbdo, "now/UnixTime")) {
     if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
@@ -769,4 +776,14 @@ void updateAvgTemp(int avgTemp) {
   }
   if(avgTemp == 0) avgTemp = 1;
   temp[0] = avgTemp;
+  sendAvgTempToFirebase();
+}
+void sendAvgTempToFirebase(){
+  if(count == ARRAY_SIZE){
+    count = 0;
+    for (int i = 0; i < ARRAY_SIZE; ++i) {
+    Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
+      }
+  }
+  count++;
 }
