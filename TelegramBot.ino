@@ -67,7 +67,7 @@ const IPAddress serverIP(172, 30, 40, 50);     // IP-адрес сервера M
 const IPAddress registratorIP(10, 70, 0, 28);  // IP-адрес сервера Modbus
 
 const int serverPort = 502;  // Порт Modbus
-int transactionId = 0;       // Уникальный идентификатор транзакции
+uint8_t transactionId = 0;   // Уникальный идентификатор транзакции
 uint8_t transactionIdResponse = 0;
 
 AsyncClient clientRegistrator;
@@ -89,7 +89,7 @@ FirebaseAuth auth;
 FirebaseConfig config;
 
 //unsigned long dataMillis = 0;
-uint8_t count = 0;
+
 
 uint16_t powerActive = 9999;
 uint16_t trottlePosition = 9999;
@@ -112,9 +112,11 @@ int cleanOil = 0;
 int avgTemp = 0;
 float resTemp = 0;
 
-const uint8_t ARRAY_SIZE = 45;
+//uint8_t count = 0;
+const uint8_t ARRAY_SIZE = 20;
 int temp[ARRAY_SIZE] = { 0 };
-uint8_t request[] = { 0 };
+uint8_t request[12] = {0};
+uint8_t requestWright[15] = {0};
 
 int hours;
 int currentHour;
@@ -211,7 +213,7 @@ void loop() {
     blink();
     getDate();
     ledTime = millis();
-    Watchdog.reset();
+      Watchdog.reset();
   } else if (ledTime > millis()) {
     ledTime = millis();
     ntpClient.update();
@@ -343,6 +345,11 @@ void getDate() {
     sendRegistratorRequest();
     //Serial.println("\nsendRegistratorRequest...");
   }
+  if(avgTemp >1000 || avgTemp < -40 || avgTemp == 0) return;
+
+  Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(0), avgTemp);
+  Firebase.RTDB.setInt(&fbdo, "avgTemp/time", getTime());
+
 }
 void sendRegistratorRequest() {
   if (!clientRegistrator.connected() && !clientRegistrator.connect(registratorIP, serverPort)) {
@@ -355,16 +362,18 @@ void sendRegistratorRequest() {
     Serial.println("\nclientRegistrator.onElseConnect...");
     transactionId = 7;
 
-    request[] = {
-      static_cast<uint8_t>(transactionId >> 8),    // Старший байт Transaction ID
-      static_cast<uint8_t>(transactionId & 0xFF),  // Младший байт Transaction ID
-      0, 0,                                        // Protocol ID (0 для Modbus TCP)
-      0, 6,                                        // Длина данных
-      1,                                           // Адрес устройства Modbus
-      4,                                           // Код функции (чтение Holding Register)
-      0, 0,                                        // Старший и младший байты адреса регистра (0)
-      0, 12                                        // Количество регистров для чтения (12)
-    };
+    request[0] = (transactionId >> 8);    // Старший байт Transaction ID
+    request[1] = (transactionId & 0xFF);  // Младший байт Transaction ID
+    request[2] = 0;
+    request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+    request[4] = 0;
+    request[5] = 6;  // Длина данных
+    request[6] = 1;  // Адрес устройства Modbus
+    request[7] = 4;  // Код функции (чтение Holding Register)
+    request[8] = 0;
+    request[9] = 0;  // Старший и младший байты адреса регистра (0)
+    request[10] = 0;
+    request[11] = 12;  // Количество регистров для чтения (12)
     // Отправьте запрос
     clientRegistrator.write(reinterpret_cast<const char *>(request), sizeof(request));
   }
@@ -373,18 +382,20 @@ void sendRegistratorRequest() {
     regLock = false;
     Serial.println("\nclientRegistrator.onConnect...");
     // Убедитесь, что transactionId определен
-    
+
     transactionId = 7;
-    request[] = {
-      static_cast<uint8_t>(transactionId >> 8),    // Старший байт Transaction ID
-      static_cast<uint8_t>(transactionId & 0xFF),  // Младший байт Transaction ID
-      0, 0,                                        // Protocol ID (0 для Modbus TCP)
-      0, 6,                                        // Длина данных
-      1,                                           // Адрес устройства Modbus
-      4,                                           // Код функции (чтение Holding Register)
-      0, 0,                                        // Старший и младший байты адреса регистра (0)
-      0, 12                                        // Количество регистров для чтения (12)
-    };
+    request[0] = (transactionId >> 8);    // Старший байт Transaction ID
+    request[1] = (transactionId & 0xFF);  // Младший байт Transaction ID
+    request[2] = 0;
+    request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+    request[4] = 0;
+    request[5] = 6;  // Длина данных
+    request[6] = 1;  // Адрес устройства Modbus
+    request[7] = 4;  // Код функции (чтение Holding Register)
+    request[8] = 0;
+    request[9] = 0;  // Старший и младший байты адреса регистра (0)
+    request[10] = 0;
+    request[11] = 12;  // Количество регистров для чтения (12)
     // Отправьте запрос
     c->write(reinterpret_cast<const char *>(request), sizeof(request));
   });
@@ -400,31 +411,34 @@ void sendRegistratorRequest() {
       // memcpy(&floatOpPresher, &opPresher, sizeof(floatOpPresher));
       // floatOpPresher = round(floatOpPresher * 10) / 10;
       // opPr = floatOpPresher;
-      opPr = round(*reinterpret_cast<uint32_t*>(&response[9]) * 10.0f) / 10.0f;
+      uint32_t opPresher = (static_cast<uint32_t>(response[9]) << 24) | (static_cast<uint32_t>(response[10]) << 16) | (static_cast<uint32_t>(response[11]) << 8) | static_cast<uint32_t>(response[12]);
+      //opPr = round(*reinterpret_cast<float*>(&opPresher) * 100) / 100;
+      memcpy(&opPr, &opPresher, sizeof(opPr));
+      opPr = round(opPr * 100) / 100;
 
-      // uint32_t GTS = ((uint32_t)response[17] << 24) | ((uint32_t)response[18] << 16) | ((uint32_t)response[19] << 8) | (uint32_t)response[20];
+      uint32_t GTS = (static_cast<uint32_t>(response[17]) << 24) | (static_cast<uint32_t>(response[18]) << 16) | (static_cast<uint32_t>(response[19]) << 8) | static_cast<uint32_t>(response[20]);
       // float floatGTS;
-      // memcpy(&floatGTS, &GTS, sizeof(floatGTS));
-      // gtsPr = round(floatGTS * 10) / 10;
-      gtsPr = round(*reinterpret_cast<uint32_t*>(&response[17]) * 10.0f) / 10.0f;
-      
-      // uint32_t KY = ((uint32_t)response[21] << 24) | ((uint32_t)response[22] << 16) | ((uint32_t)response[23] << 8) | (uint32_t)response[24];
-      // float floatKY;
-      // memcpy(&floatKY, &KY, sizeof(floatKY));
-      // kgyPr = round(floatKY * 10) / 10;
-      kgyPr = round(*reinterpret_cast<uint32_t*>(&response[21]) * 10.0f) / 10.0f;
-      
-      // uint32_t CH4_1 = ((uint32_t)response[25] << 24) | ((uint32_t)response[26] << 16) | ((uint32_t)response[27] << 8) | (uint32_t)response[28];
-      // float floatCH4_1;
-      // memcpy(&floatCH4_1, &CH4_1, sizeof(floatCH4_1));
-      // CH4_1p = round(floatCH4_1 * 10) / 10;
-      CH4_1p = round(*reinterpret_cast<uint32_t*>(&response[25]) * 10.0f) / 10.0f;
+      memcpy(&gtsPr, &GTS, sizeof(gtsPr));
+      gtsPr = round(gtsPr * 100) / 100;
+      //gtsPr = GTS / 10.0f;
 
-      // uint32_t CH4_2 = ((uint32_t)response[29] << 24) | ((uint32_t)response[30] << 16) | ((uint32_t)response[31] << 8) | (uint32_t)response[32];
+      uint32_t KY = (static_cast<uint32_t>(response[21]) << 24) | (static_cast<uint32_t>(response[22]) << 16) | (static_cast<uint32_t>(response[23]) << 8) | static_cast<uint32_t>(response[24]);
+      // float floatKY;
+      memcpy(&kgyPr, &KY, sizeof(kgyPr));
+      // kgyPr = round(floatKY * 10) / 10;
+      kgyPr = round(kgyPr * 100) / 100;
+
+      uint32_t CH4_1 = (static_cast<uint32_t>(response[25]) << 24) | (static_cast<uint32_t>(response[26]) << 16) | (static_cast<uint32_t>(response[27]) << 8) | static_cast<uint32_t>(response[28]);
+      // float floatCH4_1;
+      memcpy(&CH4_1p, &CH4_1, sizeof(CH4_1p));
+      // CH4_1p = round(floatCH4_1 * 10) / 10;
+      CH4_1p = round(CH4_1p * 100) / 100;
+
+      uint32_t CH4_2 = (static_cast<uint32_t>(response[29]) << 24) | (static_cast<uint32_t>(response[30]) << 16) | (static_cast<uint32_t>(response[31]) << 8) | static_cast<uint32_t>(response[32]);
       // float floatCH4_2;
-      // memcpy(&floatCH4_2, &CH4_2, sizeof(floatCH4_2));
+      memcpy(&CH4_2p, &CH4_2, sizeof(CH4_2p));
       // CH4_2p = round(floatCH4_2 * 10) / 10;
-      CH4_2p = round(*reinterpret_cast<uint32_t*>(&response[25]) * 10.0f) / 10.0f;
+      CH4_2p = round(CH4_2p * 100) / 100;
 
       resultRegistrator = "Давление перед GTS: " + String(gtsPr) + " kPa\n";
       resultRegistrator += "Давление перед КГУ: " + String(kgyPr) + " kPa\n";
@@ -458,17 +472,20 @@ void sendKGYRequest() {
     Serial.println("clientKGY.onElseConnect...");
     kgyLock = false;
     transactionId = 1;
-    request[] = {
-      (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-      (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-      0, 0,                             // Protocol ID (0 для Modbus TCP)
-      0, 6,                             // Длина данных
-      1,                                // Адрес устройства Modbus
-      3,                                // Код функции (чтение Holding Register)
-      (uint8_t)(9204 >> 8),             // Старший байт адреса регистра
-      (uint8_t)(9204 & 0xFF),           // Младший байт адреса регистра
-      0, 1                              // Количество регистров для чтения (1)
-    };
+
+    request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+    request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+    request[2] = 0;
+    request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+    request[4] = 0;
+    request[5] = 6;                       // Длина данных
+    request[6] = 1;                       // Адрес устройства Modbus
+    request[7] = 3;                       // Код функции (чтение Holding Register)
+    request[8] = (uint8_t)(9204 >> 8);    // Старший байт адреса регистра
+    request[9] = (uint8_t)(9204 & 0xFF);  // Младший байт адреса регистра
+    request[10] = 0;
+    request[11] = 1;  // Количество регистров для чтения (1)
+
     clientKGY.write(reinterpret_cast<const char *>(request), sizeof(request));
   }
   // Создайте и отправьте запрос к КГУ
@@ -476,77 +493,90 @@ void sendKGYRequest() {
     Serial.println("clientKGY.onConnect...");
     kgyLock = false;
     transactionId = 1;
-    request[] = {
-      (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-      (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-      0, 0,                             // Protocol ID (0 для Modbus TCP)
-      0, 6,                             // Длина данных
-      1,                                // Адрес устройства Modbus
-      3,                                // Код функции (чтение Holding Register)
-      (uint8_t)(9204 >> 8),             // Старший байт адреса регистра
-      (uint8_t)(9204 & 0xFF),           // Младший байт адреса регистра
-      0, 1                              // Количество регистров для чтения (1)
-    };
+
+    request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+    request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+    request[2] = 0;
+    request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+    request[4] = 0;
+    request[5] = 6;                       // Длина данных
+    request[6] = 1;                       // Адрес устройства Modbus
+    request[7] = 3;                       // Код функции (чтение Holding Register)
+    request[8] = (uint8_t)(9204 >> 8);    // Старший байт адреса регистра
+    request[9] = (uint8_t)(9204 & 0xFF);  // Младший байт адреса регистра
+    request[10] = 0;
+    request[11] = 1;  // Количество регистров для чтения (1)
 
     c->write(reinterpret_cast<const char *>(request), sizeof(request));
   });
   // Установите обработчик ответа от КГУ
   clientKGY.onData([](void *arg, AsyncClient *c, void *data, size_t len) {
-    Serial.println("clientKGY.onData...");
+    //Serial.println("clientKGY.onData...");
     if (len >= 10) {
       uint8_t *response = static_cast<uint8_t *>(data);
       transactionIdResponse = 0;
       transactionIdResponse = (((response[0] << 8) | response[1]));
+      Serial.println("clientKGY.onData..." + String(transactionIdResponse));
+
       if (transactionIdResponse == 1) {
         trottlePosition = (((response[9] << 8) | response[10]) / 10);
         resultKGY = "Положение дросселя КГУ: " + String(trottlePosition) + " %\n";
 
         transactionId = 2;
-        request[] = {
-          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-          0, 0,                             // Protocol ID (0 для Modbus TCP)
-          0, 6,                             // Длина данных
-          1,                                // Адрес устройства Modbus
-          3,                                // Код функции (чтение Holding Register)
-          (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
-          (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
-          0, 1                              // Количество регистров для чтения (1)
-        };
+
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(8639 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(8639 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 1;  // Количество регистров для чтения (1)
+
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionIdResponse == 2) {
         powerConstant = (response[9] << 8) | response[10];
         resultKGY += "Заданная мощность: " + String(powerConstant) + " kW\n";
 
         transactionId = 3;
-        request[] = {
-          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-          0, 0,                             // Protocol ID (0 для Modbus TCP)
-          0, 6,                             // Длина данных
-          1,                                // Адрес устройства Modbus
-          3,                                // Код функции (чтение Holding Register)
-          (uint8_t)(8202 >> 8),             // Старший байт адреса регистра
-          (uint8_t)(8202 & 0xFF),           // Младший байт адреса регистра
-          0, 1                              // Количество регистров для чтения (1)
-        };
+
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(8202 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(8202 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 1;  // Количество регистров для чтения (1)
+
+
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionIdResponse == 3) {
         powerActive = (response[9] << 8) | response[10];
         resultKGY += "Активная мощность: " + String(powerActive) + " kW\n";
 
         transactionId = 9;
-        request[] = {
-          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-          0, 0,                             // Protocol ID (0 для Modbus TCP)
-          0, 6,                             // Длина данных
-          1,                                // Адрес устройства Modbus
-          3,                                // Код функции (чтение Holding Register)
-          (uint8_t)(8235 >> 8),             // Старший байт адреса регистра
-          (uint8_t)(8235 & 0xFF),           // Младший байт адреса регистра
-          0, 2                              // Количество регистров для чтения (1)
-        };
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(8235 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(8235 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 1;  // Количество регистров для чтения (1)
+
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionIdResponse == 9) {
         short values = (response[9] << 8) | response[10];
@@ -557,65 +587,77 @@ void sendKGYRequest() {
         isAlarm = (bit7 | bit8);
 
         transactionId = 6;
-        request[] = {
-          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-          0, 0,                             // Protocol ID (0 для Modbus TCP)
-          0, 6,                             // Длина данных
-          1,                                // Адрес устройства Modbus
-          3,                                // Код функции (чтение Holding Register)
-          (uint8_t)(8205 >> 8),             // Старший байт адреса регистра
-          (uint8_t)(8205 & 0xFF),           // Младший байт адреса регистра
-          0, 2                              // Количество регистров для чтения (1)
-        };
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(8205 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(8205 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 2;  // Количество регистров для чтения (1)
+
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionIdResponse == 6) {
+        //totalGenerated = (static_cast<uint32_t>(response[9]) << 24) | (static_cast<uint32_t>(response[10]) << 16) | (static_cast<uint32_t>(response[11]) << 8) | static_cast<uint32_t>(response[12]);
         totalGenerated = ((uint32_t)response[9] << 24) | ((uint32_t)response[10] << 16) | ((uint32_t)response[11] << 8) | (uint32_t)response[12];
 
         transactionId = 4;
-        request[] = {
-          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-          0, 0,                             // Protocol ID (0 для Modbus TCP)
-          0, 6,                             // Длина данных
-          1,                                // Адрес устройства Modbus
-          3,                                // Код функции (чтение Holding Register)
-          (uint8_t)(9620 >> 8),             // Старший байт адреса регистра
-          (uint8_t)(9620 & 0xFF),           // Младший байт адреса регистра
-          0, 2                              // Количество регистров для чтения (1)
-        };
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(9620 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(9620 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 1;  // Количество регистров для чтения (1)
+
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionIdResponse == 4) {
         avgTemp = (response[9] << 8) | response[10];
-        updateAvgTemp(avgTemp);
+        if(avgTemp == 0) avgTemp = 1;
+
+        //updateAvgTemp(avgTemp);
+
         transactionId = 8;
-        request[] = {
-          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-          0, 0,                             // Protocol ID (0 для Modbus TCP)
-          0, 6,                             // Длина данных
-          1,                                // Адрес устройства Modbus
-          3,                                // Код функции (чтение Holding Register)
-          (uint8_t)(9157 >> 8),             // Старший байт адреса регистра
-          (uint8_t)(9157 & 0xFF),           // Младший байт адреса регистра
-          0, 2                              // Количество регистров для чтения (1)
-        };
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(9157 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(9157 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 1;  // Количество регистров для чтения (1)
+
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionIdResponse == 8) {
         cleanOil = (response[9] << 8) | response[10];
 
         transactionId = 10;
-        request[] = {
-          (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-          (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-          0, 0,                             // Protocol ID (0 для Modbus TCP)
-          0, 6,                             // Длина данных
-          1,                                // Адрес устройства Modbus
-          3,                                // Код функции (чтение Holding Register)
-          (uint8_t)(9206 >> 8),             // Старший байт адреса регистра
-          (uint8_t)(9206 & 0xFF),           // Младший байт адреса регистра
-          0, 2                              // Количество регистров для чтения (1)
-        };
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(9206 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(9206 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 1;  // Количество регистров для чтения (1)
+
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionIdResponse == 10) {
         resTemp = (response[9] << 8) | response[10];
@@ -626,27 +668,30 @@ void sendKGYRequest() {
         if (isPower) {
           isPower = false;
           transactionId = 5;
-          request[] = {
-            (uint8_t)(transactionId >> 8),    // Старший байт Transaction ID
-            (uint8_t)(transactionId & 0xFF),  // Младший байт Transaction ID
-            0, 0,                             // Protocol ID (0 для Modbus TCP)
-            0, 6,                             // Длина данных
-            1,                                // Адрес устройства Modbus
-            16,                               // Код функции (чтение Holding Register)
-            (uint8_t)(8639 >> 8),             // Старший байт адреса регистра
-            (uint8_t)(8639 & 0xFF),           // Младший байт адреса регистра
-            0, 1,                             // Количество регистров для записи (1)
-            2,                                // Колличество байт данных
-            (uint8_t)(intPower >> 8),         // Данные первый байт
-            (uint8_t)(intPower & 0xFF)        // Данные второй байт
-          };
-          c->write(reinterpret_cast<const char *>(request), sizeof(request));
+
+          requestWright[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+          requestWright[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+          requestWright[2] = 0;
+          requestWright[3] = 0;  // Protocol ID (0 для Modbus TCP)
+          requestWright[4] = 0;
+          requestWright[5] = 6;                       // Длина данных
+          requestWright[6] = 1;                       // Адрес устройства Modbus
+          requestWright[7] = 16;                      // Код функции (запись Holding Register)
+          requestWright[8] = (uint8_t)(8639 >> 8);    // Старший байт адреса регистра
+          requestWright[9] = (uint8_t)(8639 & 0xFF);  // Младший байт адреса регистра
+          requestWright[10] = 0;
+          requestWright[11] = 1;                           // Количество регистров для записи (1)
+          requestWright[12] = 2;                           // Колличество байт данных
+          requestWright[13] = (uint8_t)(intPower >> 8);    // Данные первый байт
+          requestWright[14] = (uint8_t)(intPower & 0xFF);  // Данные второй байт
+
+          c->write(reinterpret_cast<const char *>(requestWright), sizeof(requestWright));
         } else {
           //c->close(false);
           kgyLock = true;
           Serial.println("clientKGY.CLOSE no regulate...");
         }
-      } else if (transactionId == 5) {
+      } else if (transactionIdResponse == 5) {
         //c->close(false);
         kgyLock = true;
         Serial.println("clientKGY.CLOSE after regulate...");
@@ -768,22 +813,22 @@ uint32_t getTime() {
 }
 
 void updateAvgTemp(int avgTemp) {
-  if(temp > 1000 || temp < -40) return;
+  if (avgTemp > 1000 || avgTemp < -40) return;
   if (temp[0] != 0) {
     for (int i = ARRAY_SIZE - 1; i > 0; --i) {
       temp[i] = temp[i - 1];
     }
   }
-  if(avgTemp == 0) avgTemp = 1;
+  if (avgTemp == 0) avgTemp = 1;
   temp[0] = avgTemp;
-  sendAvgTempToFirebase();
+  //sendAvgTempToFirebase();
 }
-void sendAvgTempToFirebase(){
-  if(count == ARRAY_SIZE){
-    count = 0;
-    for (int i = 0; i < ARRAY_SIZE; ++i) {
-    Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
-      }
-  }
-  count++;
-}
+// void sendAvgTempToFirebase() {
+//   if (count == ARRAY_SIZE) {
+//     count = 0;
+//     for (int i = 0; i < ARRAY_SIZE - 1 ; ++i) {
+//       Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
+//     }
+//   }
+//   count++;
+// }
