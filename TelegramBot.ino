@@ -290,7 +290,10 @@ void setPower(int power) {
 bool checkValidData() {
   static uint32_t validTime = millis();
 
-  if (trottlePosition > 100 || trottlePosition < -5 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0) {
+  if (trottlePosition > 100 || trottlePosition < -5 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 
+  || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0 || cleanOil > 110 || cleanOil < -5 || avgTemp > 600 || avgTemp < -40
+  || resTemp > 120 || resTemp < -40) {
+
     Serial.println("\ntrottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
     return false;
   } else {
@@ -345,7 +348,7 @@ void getDate() {
     sendRegistratorRequest();
     //Serial.println("\nsendRegistratorRequest...");
   }
-  if(avgTemp >1000 || avgTemp < -40 || avgTemp == 0) return;
+  if(avgTemp >1000 || avgTemp < -40 || avgTemp == 0 || getTime() % 2 != 0) return;
 
   Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(0), avgTemp);
   Firebase.RTDB.setInt(&fbdo, "avgTemp/time", getTime());
@@ -788,6 +791,7 @@ void monthGenerated() {
   int currentDay = getDayOfMonthFromUnixTime();
   if (currentDay == 1 && day != currentDay && totalGenerated != 0) {
     Firebase.RTDB.setInt(&fbdo, "now/monthStartGenerated", totalGenerated);
+    monthStartGenerated = totalGenerated;
     day = currentDay;
   }
   if (monthStartGenerated == 0) {
@@ -812,17 +816,17 @@ uint32_t getTime() {
   return now;
 }
 
-void updateAvgTemp(int avgTemp) {
-  if (avgTemp > 1000 || avgTemp < -40) return;
-  if (temp[0] != 0) {
-    for (int i = ARRAY_SIZE - 1; i > 0; --i) {
-      temp[i] = temp[i - 1];
-    }
-  }
-  if (avgTemp == 0) avgTemp = 1;
-  temp[0] = avgTemp;
-  //sendAvgTempToFirebase();
-}
+// void updateAvgTemp(int avgTemp) {
+//   if (avgTemp > 1000 || avgTemp < -40) return;
+//   if (temp[0] != 0) {
+//     for (int i = ARRAY_SIZE - 1; i > 0; --i) {
+//       temp[i] = temp[i - 1];
+//     }
+//   }
+//   if (avgTemp == 0) avgTemp = 1;
+//   temp[0] = avgTemp;
+//   //sendAvgTempToFirebase();
+// }
 // void sendAvgTempToFirebase() {
 //   if (count == ARRAY_SIZE) {
 //     count = 0;
