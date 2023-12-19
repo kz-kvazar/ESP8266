@@ -98,8 +98,6 @@ uint32_t totalGenerated = 0;
 float CH4_1p = 9999;
 float CH4_2p = 9999;
 float CH4_KGY = 9999;
-// float crankcaseGases = 9999;
-// uint32_t motoHour = 9999;
 float wnding1Temp = 9999;
 float wnding2Temp = 9999;
 float wnding3Temp = 9999;
@@ -124,9 +122,6 @@ int cleanOil = 0;
 int avgTemp = 0;
 float resTemp = 0;
 
-//uint8_t count = 0;
-const uint8_t ARRAY_SIZE = 20;
-int temp[ARRAY_SIZE] = { 0 };
 uint8_t request[12] = {0};
 uint8_t requestWright[15] = {0};
 
@@ -144,10 +139,14 @@ uint32_t epochTime = 0;
 //String reset = "";  //String(ESP.getResetInfo()) + "\n";
 
 #define LED_BUILTIN 2
-// This sets Arduino Stack Size - comment this line to use default 8K stack size
+uint8_t resetPin = 5;
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);  // Настройка пина GPIO2 как выхода
+
+  pinMode(resetPin, OUTPUT);
+  digitalWrite(resetPin, true);
+
   // initialize the Serial
   Serial.begin(9600);
   Serial.println("\nStarting TelegramBot...");
@@ -217,11 +216,12 @@ void loop() {
     hourTime = millis();
   } else if (hourTime > millis()) {
     hourTime = millis();
+    ntpClient.update();
+    epochTime = ntpClient.getEpochTime();
   }
 
   static uint32_t ledTime = millis();
   if (millis() - ledTime > 1000 && (firebase || regulate || appRegulate)) {
-    //regulatePower();
     blink();
     getDate();
     ledTime = millis();
@@ -271,8 +271,6 @@ void loop() {
       String message;
       stamp.getDateTime(getTime());
       message = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) + ":" + String(stamp.minute) + ":" + String(stamp.second) + "\n";
-      // message = uxTaskGetStackHighWaterMark(NULL) + "\n";
-      //message += reset;
       message += resultKGY;
       message += resultRegistrator;
       if (monthStartGenerated != 0) {
@@ -322,7 +320,7 @@ void regulatePower() {
 
   if (powerActive > 0 && millis() - lastRegulate > 20000) {
     (opPr > 6 && powerActive < 1250) ? reg = 20 : reg = 10;
-    if (opPr < 3 || avgTemp > 470) {
+    if (opPr < 3 || avgTemp > 470 || avgTemp < 300) {
       (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
       lastRegulate = millis();
     } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower) {
@@ -342,9 +340,13 @@ void regulatePower() {
     appMaxPower = 1560;
     maxPower = 1560;
     myBot.sendToChannel(channel, "КГУ остановленно!! \nТак и задумано?", true);
+    Firebase.RTDB.setBool(&fbdo, "now/alarm", true);
+    delay(1000);
+    Firebase.RTDB.setBool(&fbdo, "now/alarm", false);
 
   } else if (lastRegulate > millis()) {
     lastRegulate = millis();
+    powerUpTime = millis();
   }
 }
 void checkActPower() {
@@ -917,12 +919,9 @@ void pushToFirebase() {
   if (!checkValidData()) {
     return;
   }
-
   Firebase.RTDB.setFloat(&fbdo, "now/opPresher", opPr);
   Firebase.RTDB.setFloat(&fbdo, "now/trottlePosition", trottlePosition);
   Firebase.RTDB.setFloat(&fbdo, "now/CH4_KGY", CH4_KGY);
-  // Firebase.RTDB.setFloat(&fbdo, "now/crankcaseGases", crankcaseGases);  
-  // Firebase.RTDB.setInt(&fbdo, "now/motoHour", motoHour);
   Firebase.RTDB.setFloat(&fbdo, "now/wnding1Temp", wnding1Temp);
   Firebase.RTDB.setFloat(&fbdo, "now/wnding2Temp", wnding2Temp);
   Firebase.RTDB.setFloat(&fbdo, "now/wnding3Temp", wnding3Temp);
@@ -945,11 +944,6 @@ void pushToFirebase() {
   Firebase.RTDB.setInt(&fbdo, "now/avgTemp", avgTemp);
   Firebase.RTDB.setFloat(&fbdo, "now/resTemp", resTemp);
   Firebase.RTDB.setInt(&fbdo, "now/serverUnixTime20", getTime());
-
-  //updateAvgTemp(avgTemp);
-  // for (int i = 0; i < ARRAY_SIZE; ++i) {
-  //   Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
-  // }
 
   if (Firebase.RTDB.getInt(&fbdo, "now/UnixTime")) {
     if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
@@ -1040,29 +1034,10 @@ uint32_t getTime() {
   uint32_t now = (millis() / 1000) + epochTime;
   currentHour = (now / 3600) % 24;
   if(now < 1701730982){
-    ntpClient.update();
-    epochTime = ntpClient.getEpochTime();
+    delay(10000);
+    digitalWrite(resetPin, LOW);    // Установить низкий уровень на D1 (RST)
+    delay(100);                      // Подождать некоторое время
+    digitalWrite(resetPin, HIGH);   // Установить высокий уровень на D1 (RST)
   }
   return now;
 }
-
-// void updateAvgTemp(int avgTemp) {
-//   if (avgTemp > 1000 || avgTemp < -40) return;
-//   if (temp[0] != 0) {
-//     for (int i = ARRAY_SIZE - 1; i > 0; --i) {
-//       temp[i] = temp[i - 1];
-//     }
-//   }
-//   if (avgTemp == 0) avgTemp = 1;
-//   temp[0] = avgTemp;
-//   //sendAvgTempToFirebase();
-// }
-// void sendAvgTempToFirebase() {
-//   if (count == ARRAY_SIZE) {
-//     count = 0;
-//     for (int i = 0; i < ARRAY_SIZE - 1 ; ++i) {
-//       Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(i), temp[i]);
-//     }
-//   }
-//   count++;
-// }
