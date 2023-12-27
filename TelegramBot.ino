@@ -122,6 +122,7 @@ int cleanOil = 0;
 int avgTemp = 0;
 float resTemp = 0;
 
+
 uint8_t request[12] = {0};
 uint8_t requestWright[15] = {0};
 
@@ -135,6 +136,7 @@ bool firebase = true;
 bool kgyLock = true;
 bool regLock = true;
 bool isAlarm = false;
+bool isStop = false;
 uint32_t epochTime = 0;
 //String reset = "";  //String(ESP.getResetInfo()) + "\n";
 
@@ -202,7 +204,7 @@ void setup() {
   hours = currentHour;
 
   digitalWrite(LED_BUILTIN, false);
-  int downMS = Watchdog.enable(20000);
+  int downMS = Watchdog.enable(22000);
 }
 
 void loop() {
@@ -223,9 +225,9 @@ void loop() {
   static uint32_t ledTime = millis();
   if (millis() - ledTime > 1000 && (firebase || regulate || appRegulate)) {
     blink();
+    Watchdog.reset();
     getDate();
     ledTime = millis();
-      Watchdog.reset();
   } else if (ledTime > millis()) {
     ledTime = millis();
     ntpClient.update();
@@ -339,11 +341,7 @@ void regulatePower() {
     setPower(800);
     appMaxPower = 1560;
     maxPower = 1560;
-    myBot.sendToChannel(channel, "КГУ остановленно!! \nТак и задумано?", true);
-    Firebase.RTDB.setBool(&fbdo, "now/alarm", true);
-    delay(1000);
-    Firebase.RTDB.setBool(&fbdo, "now/alarm", false);
-
+    isStop = true;
   } else if (lastRegulate > millis()) {
     lastRegulate = millis();
     powerUpTime = millis();
@@ -368,6 +366,14 @@ void getDate() {
 
   Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(0), avgTemp);
   Firebase.RTDB.setInt(&fbdo, "avgTemp/time", getTime());
+
+  if(isStop){
+    isStop = false;
+    myBot.sendToChannel(channel, "КГУ остановленно!! \nТак и задумано?", true);
+    Firebase.RTDB.setBool(&fbdo, "now/alarm", true); //отправляет аларм на сервер если машина остановилась
+    delay(2000);
+    Firebase.RTDB.setBool(&fbdo, "now/alarm", false);
+  }
 
 }
 void sendRegistratorRequest() {
