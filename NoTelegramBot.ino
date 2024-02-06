@@ -73,17 +73,13 @@ uint8_t transactionIdResponse = 0;
 AsyncClient clientRegistrator;
 AsyncClient clientKGY;
 
-const char *ssid = "TEDOMHOST";  // SSID WiFi network
-const char *pass = "tedomhost";  // Password  WiFi network
-
-// const char *ssid = "UMG-GUESTS";                                        // SSID WiFi network
-// const char *pass = "C4aW2zWS";                                        // Password  WiFi network
-
-const char *token = "6604238506:AAE6ckDJVAkjN00sq1NMHzTXVMldnKyuq7A";  // Telegram token
-const char *channel = "-1001981116655";
-int64_t userid = 752684049;
-#define DATABASE_URL "https://kgy-regulator-default-rtdb.europe-west1.firebasedatabase.app/"
-#define DATABASE_SECRET "4cG7ag0EgtjdF92x2xKbymNP3wZcCpof2sMWeS05"
+const char *ssid = "***";                                        // SSID WiFi network
+const char *pass = "***";                                        // Password  WiFi network
+const char *token = "***";  // Telegram token
+const char *channel = "***";
+int64_t userid = ***;
+#define DATABASE_URL "***"
+#define DATABASE_SECRET "***"
 
 String resultRegistrator;
 String resultKGY;
