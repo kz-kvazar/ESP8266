@@ -39,7 +39,7 @@ WiFiClientSecure client;
 
 #include <Arduino.h>
 #if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
-SET_LOOP_TASK_STACK_SIZE(16 * 1024);  // 16KB
+//SET_LOOP_TASK_STACK_SIZE(16 * 1024);  // 16KB
 #include <WiFi.h>
 #elif defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -73,8 +73,12 @@ uint8_t transactionIdResponse = 0;
 AsyncClient clientRegistrator;
 AsyncClient clientKGY;
 
-const char *ssid = "TEDOMHOST";                                        // SSID WiFi network
-const char *pass = "tedomhost";                                        // Password  WiFi network
+const char *ssid = "TEDOMHOST";  // SSID WiFi network
+const char *pass = "tedomhost";  // Password  WiFi network
+
+// const char *ssid = "UMG-GUESTS";                                        // SSID WiFi network
+// const char *pass = "C4aW2zWS";                                        // Password  WiFi network
+
 const char *token = "6604238506:AAE6ckDJVAkjN00sq1NMHzTXVMldnKyuq7A";  // Telegram token
 const char *channel = "-1001981116655";
 int64_t userid = 752684049;
@@ -123,8 +127,8 @@ int avgTemp = 0;
 float resTemp = 0;
 
 
-uint8_t request[12] = {0};
-uint8_t requestWright[15] = {0};
+uint8_t request[12] = { 0 };
+uint8_t requestWright[15] = { 0 };
 
 int hours;
 int currentHour;
@@ -140,25 +144,60 @@ bool isStop = false;
 uint32_t epochTime = 0;
 //String reset = "";  //String(ESP.getResetInfo()) + "\n";
 
-#define LED_BUILTIN 2
-uint8_t resetPin = 5;
+const uint8_t LED_BUILTIN_ = 15;
+const uint8_t resetPin = 5;
 
 void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);  // Настройка пина GPIO2 как выхода
+  pinMode(LED_BUILTIN_, OUTPUT);  // Настройка пина GPIO2 как выхода
 
   pinMode(resetPin, OUTPUT);
   digitalWrite(resetPin, true);
 
   // initialize the Serial
   Serial.begin(115200);
+
+  delay(2000);  // wait for serial port to connect. Needed for native USB port only
+
   //Serial.println("\nStarting TelegramBot...");
 
-  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, pass);
-  delay(500);
+  WiFi.mode(WIFI_STA);
+
+  //delay(500);
   while (WiFi.status() != WL_CONNECTED) {
+    switch (WiFi.status()) {
+      case WL_NO_SSID_AVAIL:
+        Serial.println("[WiFi] SSID not found");
+        break;
+      case WL_CONNECT_FAILED:
+        Serial.print("[WiFi] Failed - WiFi not connected! Reason: ");
+        return;
+        break;
+      case WL_CONNECTION_LOST:
+        Serial.println("[WiFi] Connection was lost");
+        break;
+      case WL_SCAN_COMPLETED:
+        Serial.println("[WiFi] Scan is completed");
+        break;
+      case WL_DISCONNECTED:
+        Serial.println("[WiFi] WiFi is disconnected");
+        break;
+      case WL_CONNECTED:
+        Serial.println("[WiFi] WiFi is connected!");
+        Serial.print("[WiFi] IP address: ");
+        Serial.println(WiFi.localIP());
+        return;
+        break;
+      default:
+        Serial.print("[WiFi] WiFi Status: ");
+        Serial.println(WiFi.status());
+        break;
+    }
+    digitalWrite(LED_BUILTIN_, true);
     Serial.print('.');
-    delay(500);
+    delay(3000);
+    digitalWrite(LED_BUILTIN_, false);
+    delay(3000);
   }
 
 #ifdef ESP8266
@@ -203,7 +242,7 @@ void setup() {
   currentHour = (epochTime / 3600) % 24;
   hours = currentHour;
 
-  digitalWrite(LED_BUILTIN, false);
+  digitalWrite(LED_BUILTIN_, false);
   int downMS = Watchdog.enable(22000);
 }
 
@@ -265,7 +304,7 @@ void loop() {
   //       myBot.sendToChannel(channel, "FireBase активирован", true);
   //     }
   //   } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport)) {
-  //     digitalWrite(LED_BUILTIN, false);
+  //     digitalWrite(LED_BUILTIN_, false);
   //     if (!regulate && !firebase && !appRegulate) {
   //       getDate();
   //       delay(5500);
@@ -285,15 +324,15 @@ void loop() {
   //     if ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport) {
   //       hours = currentHour;
   //     }
-  //     digitalWrite(LED_BUILTIN, true);
+  //     digitalWrite(LED_BUILTIN_, true);
   //   }
   // }
 }
 
 void blink() {
-  digitalWrite(LED_BUILTIN, false);
+  digitalWrite(LED_BUILTIN_, false);
   delay(200);
-  digitalWrite(LED_BUILTIN, true);
+  digitalWrite(LED_BUILTIN_, true);
 }
 void setPower(int power) {
   intPower = power;
@@ -302,11 +341,11 @@ void setPower(int power) {
 bool checkValidData() {
   static uint32_t validTime = millis();
 
-  if (trottlePosition > 100 || trottlePosition < -5 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000 
-  || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0 || cleanOil > 110 || cleanOil < -5 || avgTemp > 600 || avgTemp < -40
-  || resTemp > 120 || resTemp < -40 || CH4_KGY > 110 || CH4_KGY < -10 || gasTemp < -40 || gasTemp > 900 || l1N > 600 || l1N < -10 || l2N > 600 || l2N < -10 
-  || l3N > 600 || l3N < -10 || wnding1Temp > 900 || wnding1Temp < -40 || wnding2Temp > 900 || wnding2Temp < -40 || wnding3Temp > 900 || wnding3Temp < -40 
-  || bearing1Temp > 900 || bearing1Temp < -40 || bearing2Temp > 900 || bearing2Temp < -40) {
+  if (trottlePosition > 100 || trottlePosition < -5 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000
+      || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0 || cleanOil > 110 || cleanOil < -5 || avgTemp > 600 || avgTemp < -40
+      || resTemp > 120 || resTemp < -40 || CH4_KGY > 110 || CH4_KGY < -10 || gasTemp < -40 || gasTemp > 900 || l1N > 600 || l1N < -10 || l2N > 600 || l2N < -10
+      || l3N > 600 || l3N < -10 || wnding1Temp > 900 || wnding1Temp < -40 || wnding2Temp > 900 || wnding2Temp < -40 || wnding3Temp > 900 || wnding3Temp < -40
+      || bearing1Temp > 900 || bearing1Temp < -40 || bearing2Temp > 900 || bearing2Temp < -40) {
 
     Serial.println("\ntrottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
     return false;
@@ -362,19 +401,18 @@ void getDate() {
     sendRegistratorRequest();
     //Serial.println("\nsendRegistratorRequest...");
   }
-  if(avgTemp >1000 || avgTemp < -40 || avgTemp == 0 || getTime() % 2 != 0) return;
+  if (avgTemp > 1000 || avgTemp < -40 || avgTemp == 0 || getTime() % 2 != 0) return;
 
   Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(0), avgTemp);
   Firebase.RTDB.setInt(&fbdo, "avgTemp/time", getTime());
 
-  if(isStop){
+  if (isStop) {
     isStop = false;
     //myBot.sendToChannel(channel, "КГУ остановленно!! \nТак и задумано?", true);
-    Firebase.RTDB.setBool(&fbdo, "now/alarm", true); //отправляет аларм на сервер если машина остановилась
+    Firebase.RTDB.setBool(&fbdo, "now/alarm", true);  //отправляет аларм на сервер если машина остановилась
     delay(2000);
     Firebase.RTDB.setBool(&fbdo, "now/alarm", false);
   }
-
 }
 void sendRegistratorRequest() {
   if (!clientRegistrator.connected() && !clientRegistrator.connect(registratorIP, serverPort)) {
@@ -704,7 +742,7 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 11){
+      } else if (transactionIdResponse == 11) {
         CH4_KGY = (((response[9] << 8) | response[10]) / 10.0f);
 
         transactionId = 12;
@@ -722,9 +760,9 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 12){
+      } else if (transactionIdResponse == 12) {
         gasTemp = (((response[9] << 8) | response[10]) / 10.0f);
-      
+
         transactionId = 15;
         request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
         request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
@@ -740,7 +778,7 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 15){
+      } else if (transactionIdResponse == 15) {
         l1N = (response[9] << 8) | response[10];
         // l2N = (response[11] << 8) | response[12];
         // l3N = (response[13] << 8) | response[14];
@@ -760,8 +798,8 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      
-      }else if (transactionIdResponse == 16){
+
+      } else if (transactionIdResponse == 16) {
         l2N = (response[9] << 8) | response[10];
 
         transactionId = 17;
@@ -779,7 +817,7 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 17){
+      } else if (transactionIdResponse == 17) {
         l3N = (response[9] << 8) | response[10];
 
         transactionId = 18;
@@ -797,9 +835,9 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 18){
+      } else if (transactionIdResponse == 18) {
         bearing1Temp = (((response[9] << 8) | response[10]) / 10.0f);
-        
+
         transactionId = 19;
         request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
         request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
@@ -815,9 +853,9 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 19){
+      } else if (transactionIdResponse == 19) {
         bearing2Temp = (((response[9] << 8) | response[10]) / 10.0f);
-        
+
         transactionId = 20;
         request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
         request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
@@ -833,7 +871,7 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 20){
+      } else if (transactionIdResponse == 20) {
         wnding1Temp = (((response[9] << 8) | response[10]) / 10.0f);
 
         transactionId = 21;
@@ -851,7 +889,7 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 21){
+      } else if (transactionIdResponse == 21) {
         wnding2Temp = (((response[9] << 8) | response[10]) / 10.0f);
 
         transactionId = 22;
@@ -869,7 +907,7 @@ void sendKGYRequest() {
         request[11] = 1;  // Количество регистров для чтения (1)
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
-      }else if (transactionIdResponse == 22){
+      } else if (transactionIdResponse == 22) {
         wnding3Temp = (((response[9] << 8) | response[10]) / 10.0f);
 
         regulatePower();
@@ -922,33 +960,105 @@ void sendKGYRequest() {
   });
 }
 void pushToFirebase() {
-  if (!checkValidData()) {
-    return;
-  }
-  Firebase.RTDB.setFloat(&fbdo, "now/opPresher", opPr);
-  Firebase.RTDB.setFloat(&fbdo, "now/trottlePosition", trottlePosition);
-  Firebase.RTDB.setFloat(&fbdo, "now/CH4_KGY", CH4_KGY);
-  Firebase.RTDB.setFloat(&fbdo, "now/wnding1Temp", wnding1Temp);
-  Firebase.RTDB.setFloat(&fbdo, "now/wnding2Temp", wnding2Temp);
-  Firebase.RTDB.setFloat(&fbdo, "now/wnding3Temp", wnding3Temp);
-  Firebase.RTDB.setFloat(&fbdo, "now/bearing1Temp", bearing1Temp);
-  Firebase.RTDB.setFloat(&fbdo, "now/bearing2Temp", bearing2Temp);
+  // if (!checkValidData()) {
+  //   return;
+  // }
 
-  Firebase.RTDB.setFloat(&fbdo, "now/gasTemp", gasTemp);
-  Firebase.RTDB.setInt(&fbdo, "now/l1N", l1N);
-  Firebase.RTDB.setInt(&fbdo, "now/l2N", l2N);
-  Firebase.RTDB.setInt(&fbdo, "now/l3N", l3N);
-  Firebase.RTDB.setInt(&fbdo, "now/powerConstant", powerConstant);
-  Firebase.RTDB.setInt(&fbdo, "now/powerActive", powerActive);
+  if (opPr > 40 || opPr < -5) {
+    Firebase.RTDB.setFloat(&fbdo, "now/opPresher", -255);
+  } else {
+    Firebase.RTDB.setFloat(&fbdo, "now/opPresher", opPr);
+  }
+
+  if (trottlePosition > 100 || trottlePosition < -5) {
+    Firebase.RTDB.setFloat(&fbdo, "now/trottlePosition", -255);
+  } else {
+    Firebase.RTDB.setFloat(&fbdo, "now/trottlePosition", trottlePosition);
+  }
+
+  if (CH4_KGY > 110 || CH4_KGY < -10 )
+  {
+    Firebase.RTDB.setFloat(&fbdo, "now/CH4_KGY", -255);
+  }
+  else {
+    Firebase.RTDB.setFloat(&fbdo, "now/CH4_KGY", CH4_KGY);
+  }
+
+  if (wnding1Temp > 900 || wnding1Temp < -40 || wnding2Temp > 900 || wnding2Temp < -40 || wnding3Temp > 900 || wnding3Temp < -40) {
+    Firebase.RTDB.setFloat(&fbdo, "now/wnding1Temp", -255);
+    Firebase.RTDB.setFloat(&fbdo, "now/wnding2Temp", -255);
+    Firebase.RTDB.setFloat(&fbdo, "now/wnding3Temp", -255);
+  } else {
+    Firebase.RTDB.setFloat(&fbdo, "now/wnding1Temp", wnding1Temp);
+    Firebase.RTDB.setFloat(&fbdo, "now/wnding2Temp", wnding2Temp);
+    Firebase.RTDB.setFloat(&fbdo, "now/wnding3Temp", wnding3Temp);
+  }
+
+  if (bearing1Temp > 900 || bearing1Temp < -40 || bearing2Temp > 900 || bearing2Temp < -40) {
+    Firebase.RTDB.setFloat(&fbdo, "now/bearing1Temp", -255);
+    Firebase.RTDB.setFloat(&fbdo, "now/bearing2Temp", -255);
+  } else {
+    Firebase.RTDB.setFloat(&fbdo, "now/bearing1Temp", bearing1Temp);
+    Firebase.RTDB.setFloat(&fbdo, "now/bearing2Temp", bearing2Temp);
+  }
+
+  if (gasTemp < -40 || gasTemp > 900) {
+    Firebase.RTDB.setFloat(&fbdo, "now/gasTemp", -255);
+  } else {
+    Firebase.RTDB.setFloat(&fbdo, "now/gasTemp", gasTemp);
+  }
+
+  if (l1N > 600 || l1N < -10 || l2N > 600 || l2N < -10 || l3N > 600 || l3N < -10) {
+    Firebase.RTDB.setInt(&fbdo, "now/l1N", -255);
+    Firebase.RTDB.setInt(&fbdo, "now/l2N", -255);
+    Firebase.RTDB.setInt(&fbdo, "now/l3N", -255);
+  } else {
+    Firebase.RTDB.setInt(&fbdo, "now/l1N", l1N);
+    Firebase.RTDB.setInt(&fbdo, "now/l2N", l2N);
+    Firebase.RTDB.setInt(&fbdo, "now/l3N", l3N);
+  }
+
+  if (powerConstant > 1560 || powerConstant < 0) {
+    Firebase.RTDB.setInt(&fbdo, "now/powerConstant", -255);
+  } else {
+    Firebase.RTDB.setInt(&fbdo, "now/powerConstant", powerConstant);
+  }
+
+  if (powerActive > 2000 || powerActive < -300) {
+    Firebase.RTDB.setInt(&fbdo, "now/powerActive", -255);
+  } else {
+    Firebase.RTDB.setInt(&fbdo, "now/powerActive", powerActive);
+  }
+
+  if (totalGenerated == 0) {
+    Firebase.RTDB.setInt(&fbdo, "now/totalActivePower", -255);
+  } else {
+    Firebase.RTDB.setInt(&fbdo, "now/totalActivePower", totalGenerated);
+  }
+
+  if (cleanOil > 110 || cleanOil < -5) {
+    Firebase.RTDB.setInt(&fbdo, "now/cleanOil", -255);
+  } else {
+    Firebase.RTDB.setInt(&fbdo, "now/cleanOil", cleanOil);
+  }
+
+  if (avgTemp > 600 || avgTemp < -40) {
+    Firebase.RTDB.setInt(&fbdo, "now/avgTemp", -255);
+  } else {
+    Firebase.RTDB.setInt(&fbdo, "now/avgTemp", avgTemp);
+  }
+
+  if (resTemp > 120 || resTemp < -40) {
+    Firebase.RTDB.setFloat(&fbdo, "now/resTemp", -255);
+  } else {
+    Firebase.RTDB.setFloat(&fbdo, "now/resTemp", resTemp);
+  }
+
   Firebase.RTDB.setFloat(&fbdo, "now/CH4_1", CH4_1p);
   Firebase.RTDB.setFloat(&fbdo, "now/CH4_2", CH4_2p);
   Firebase.RTDB.setFloat(&fbdo, "now/gtsPresher", gtsPr);
   Firebase.RTDB.setFloat(&fbdo, "now/kgyPresher", kgyPr);
-  Firebase.RTDB.setInt(&fbdo, "now/totalActivePower", totalGenerated);
   Firebase.RTDB.setBool(&fbdo, "now/alarm", isAlarm);
-  Firebase.RTDB.setInt(&fbdo, "now/cleanOil", cleanOil);
-  Firebase.RTDB.setInt(&fbdo, "now/avgTemp", avgTemp);
-  Firebase.RTDB.setFloat(&fbdo, "now/resTemp", resTemp);
   Firebase.RTDB.setInt(&fbdo, "now/serverUnixTime20", getTime());
 
   if (Firebase.RTDB.getInt(&fbdo, "now/UnixTime")) {
@@ -974,43 +1084,110 @@ void pushToFirebase() {
   }
 }
 void firebaseReport() {
-  if (!checkValidData()) {
-    return;
-  }
+  // if (!checkValidData()) {
+  //   return;
+  // }
   if (((currentHour - hours == 1 || (currentHour - hours) == -23)) && firebase) {
     stamp.getDateTime(getTime());
     String now = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) + ":00";
     String date = "/HourReport/" + String(ntpClient.getEpochTime());
     hours = currentHour;
 
-    Firebase.RTDB.setFloat(&fbdo, date + "/opPresher", opPr);
-    Firebase.RTDB.setFloat(&fbdo, date + "/trottlePosition", trottlePosition);
+    if (opPr > 40 || opPr < -5) {
+      Firebase.RTDB.setFloat(&fbdo, date + "/opPresher", -255);
+    } else {
+      Firebase.RTDB.setFloat(&fbdo, date + "/opPresher", opPr);
+    }
 
-    Firebase.RTDB.setFloat(&fbdo, date + "/CH4_KGY", CH4_KGY);
-    // Firebase.RTDB.setFloat(&fbdo, date + "/crankcaseGases", crankcaseGases);
-    // Firebase.RTDB.setInt(&fbdo, date + "/motoHour", motoHour);
-    Firebase.RTDB.setFloat(&fbdo, date + "/gasTemp", gasTemp);
-    Firebase.RTDB.setInt(&fbdo, date + "/l1N", l1N);
-    Firebase.RTDB.setInt(&fbdo, date + "/l2N", l2N);
-    Firebase.RTDB.setInt(&fbdo, date + "/l3N", l3N);
+    if (trottlePosition > 100 || trottlePosition < -5) {
+      Firebase.RTDB.setFloat(&fbdo, date + "/trottlePosition", -255);
+    } else {
+      Firebase.RTDB.setFloat(&fbdo, date + "/trottlePosition", trottlePosition);
+    }
 
-    Firebase.RTDB.setFloat(&fbdo,  date + "/wnding1Temp", wnding1Temp);
-    Firebase.RTDB.setFloat(&fbdo,  date + "/wnding2Temp", wnding2Temp);
-    Firebase.RTDB.setFloat(&fbdo,  date + "/wnding3Temp", wnding3Temp);
-    Firebase.RTDB.setFloat(&fbdo,  date + "/bearing1Temp", bearing1Temp);
-    Firebase.RTDB.setFloat(&fbdo,  date + "/bearing2Temp", bearing2Temp);
+    if ( CH4_KGY > 110 || CH4_KGY < -10 )
+    {
+      Firebase.RTDB.setFloat(&fbdo, date + "/CH4_KGY", -255);
+    }
+    else {
+      Firebase.RTDB.setFloat(&fbdo, date + "/CH4_KGY", CH4_KGY);
+    }
 
-    Firebase.RTDB.setInt(&fbdo, date + "/powerConstant", powerConstant);
-    Firebase.RTDB.setInt(&fbdo, date + "/powerActive", powerActive);
+    if (wnding1Temp > 900 || wnding1Temp < -40 || wnding2Temp > 900 || wnding2Temp < -40 || wnding3Temp > 900 || wnding3Temp < -40) {
+      Firebase.RTDB.setFloat(&fbdo, date + "/wnding1Temp", -255);
+      Firebase.RTDB.setFloat(&fbdo, date + "/wnding2Temp", -255);
+      Firebase.RTDB.setFloat(&fbdo, date + "/wnding3Temp", -255);
+    } else {
+      Firebase.RTDB.setFloat(&fbdo, date + "/wnding1Temp", wnding1Temp);
+      Firebase.RTDB.setFloat(&fbdo, date + "/wnding2Temp", wnding2Temp);
+      Firebase.RTDB.setFloat(&fbdo, date + "/wnding3Temp", wnding3Temp);
+    }
+
+    if (bearing1Temp > 900 || bearing1Temp < -40 || bearing2Temp > 900 || bearing2Temp < -40) {
+      Firebase.RTDB.setFloat(&fbdo, date + "/bearing1Temp", -255);
+      Firebase.RTDB.setFloat(&fbdo, date + "/bearing2Temp", -255);
+    } else {
+      Firebase.RTDB.setFloat(&fbdo, date + "/bearing1Temp", bearing1Temp);
+      Firebase.RTDB.setFloat(&fbdo, date + "/bearing2Temp", bearing2Temp);
+    }
+
+    if (gasTemp < -40 || gasTemp > 900) {
+      Firebase.RTDB.setFloat(&fbdo, date + "/gasTemp", -255);
+    } else {
+      Firebase.RTDB.setFloat(&fbdo, date + "/gasTemp", gasTemp);
+    }
+
+    if (l1N > 600 || l1N < -10 || l2N > 600 || l2N < -10 || l3N > 600 || l3N < -10) {
+      Firebase.RTDB.setInt(&fbdo, date + "/l1N", -255);
+      Firebase.RTDB.setInt(&fbdo, date + "/l2N", -255);
+      Firebase.RTDB.setInt(&fbdo, date + "/l3N", -255);
+    } else {
+      Firebase.RTDB.setInt(&fbdo, date + "/l1N", l1N);
+      Firebase.RTDB.setInt(&fbdo, date + "/l2N", l2N);
+      Firebase.RTDB.setInt(&fbdo, date + "/l3N", l3N);
+    }
+
+    if (powerConstant > 1560 || powerConstant < 0) {
+      Firebase.RTDB.setInt(&fbdo, date + "/powerConstant", -255);
+    } else {
+      Firebase.RTDB.setInt(&fbdo, date + "/powerConstant", powerConstant);
+    }
+
+    if (powerActive > 2000 || powerActive < -300) {
+      Firebase.RTDB.setInt(&fbdo, date + "/powerActive", -255);
+    } else {
+      Firebase.RTDB.setInt(&fbdo, date + "/powerActive", powerActive);
+    }
+
+    if (totalGenerated == 0) {
+      Firebase.RTDB.setInt(&fbdo, date + "/totalActivePower", -255);
+    } else {
+      Firebase.RTDB.setInt(&fbdo, date + "/totalActivePower", totalGenerated);
+    }
+
+    if (cleanOil > 110 || cleanOil < -5) {
+      Firebase.RTDB.setInt(&fbdo, date + "/cleanOil", -255);
+    } else {
+      Firebase.RTDB.setInt(&fbdo, date + "/cleanOil", cleanOil);
+    }
+
+    if (avgTemp > 600 || avgTemp < -40) {
+      Firebase.RTDB.setInt(&fbdo, date + "/avgTemp", -255);
+    } else {
+      Firebase.RTDB.setInt(&fbdo, date + "/avgTemp", avgTemp);
+    }
+
+    if (resTemp > 120 || resTemp < -40) {
+      Firebase.RTDB.setFloat(&fbdo, date + "/resTemp", -255);
+    } else {
+      Firebase.RTDB.setFloat(&fbdo, date + "/resTemp", resTemp);
+    }
+
     Firebase.RTDB.setFloat(&fbdo, date + "/CH4_1", CH4_1p);
     Firebase.RTDB.setFloat(&fbdo, date + "/CH4_2", CH4_2p);
     Firebase.RTDB.setFloat(&fbdo, date + "/gtsPresher", gtsPr);
     Firebase.RTDB.setFloat(&fbdo, date + "/kgyPresher", kgyPr);
-    Firebase.RTDB.setInt(&fbdo, date + "/totalActivePower", totalGenerated);
     Firebase.RTDB.setString(&fbdo, date + "/date", now);
-    Firebase.RTDB.setInt(&fbdo, date + "/cleanOil", cleanOil);
-    Firebase.RTDB.setInt(&fbdo, date + "/avgTemp", avgTemp);
-    Firebase.RTDB.setFloat(&fbdo, date + "/resTemp", resTemp);
   }
 }
 void monthGenerated() {
@@ -1039,11 +1216,11 @@ int getDayOfMonthFromUnixTime() {
 uint32_t getTime() {
   uint32_t now = (millis() / 1000) + epochTime;
   currentHour = (now / 3600) % 24;
-  if(now < 1701730982 || millis() > 86400000){
+  if (now < 1701730982 || millis() > 86400000*7) {
     delay(10000);
-    digitalWrite(resetPin, LOW);    // Установить низкий уровень на D1 (RST)
-    delay(100);                      // Подождать некоторое время
-    digitalWrite(resetPin, HIGH);   // Установить высокий уровень на D1 (RST)
+    digitalWrite(resetPin, LOW);   // Установить низкий уровень на D1 (RST)
+    delay(100);                    // Подождать некоторое время
+    digitalWrite(resetPin, HIGH);  // Установить высокий уровень на D1 (RST)
   }
   return now;
 }
