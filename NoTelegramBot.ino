@@ -73,13 +73,20 @@ uint8_t transactionIdResponse = 0;
 AsyncClient clientRegistrator;
 AsyncClient clientKGY;
 
-const char *ssid = "***";                                        // SSID WiFi network
-const char *pass = "***";                                        // Password  WiFi network
-const char *token = "***";  // Telegram token
-const char *channel = "***";
-int64_t userid = ***;
-#define DATABASE_URL "***"
-#define DATABASE_SECRET "***"
+// const char *ssid = "matrix";  // SSID WiFi network
+// const char *pass = "777qaz777qaz";  // Password  WiFi network
+
+const char *ssid = "TEDOMHOST";  // SSID WiFi network
+const char *pass = "tedomhost";  // Password  WiFi network
+
+// const char *ssid = "UMG-GUESTS";                                        // SSID WiFi network
+// const char *pass = "C4aW2zWS";                                        // Password  WiFi network
+
+// const char *token = "6604238506:AAE6ckDJVAkjN00sq1NMHzTXVMldnKyuq7A";  // Telegram token
+// const char *channel = "-1001981116655";
+// int64_t userid = 752684049;
+#define DATABASE_URL "https://kgy-regulator-default-rtdb.europe-west1.firebasedatabase.app/"
+#define DATABASE_SECRET "4cG7ag0EgtjdF92x2xKbymNP3wZcCpof2sMWeS05"
 
 String resultRegistrator;
 String resultKGY;
@@ -128,7 +135,7 @@ uint8_t requestWright[15] = { 0 };
 
 int hours;
 int currentHour;
-bool hourReport = false;
+//bool hourReport = false;
 bool regulate = false;
 bool skipFirst = false;
 bool appRegulate = false;
@@ -357,10 +364,10 @@ void regulatePower() {
 
   if (powerActive > 0 && millis() - lastRegulate > 20000) {
     (opPr > 6 && powerActive < 1250) ? reg = 20 : reg = 10;
-    if (opPr < 3 || avgTemp > 470 || avgTemp < 300) {
+    if (opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96) {
       (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
       lastRegulate = millis();
-    } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower) {
+    } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 57) {
       checkActPower();
       checkThrottle();
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
@@ -386,7 +393,7 @@ void checkActPower() {
   if (powerActive > 1560) appMaxPower = powerConstant - 10;
 }
 void checkThrottle() {
-  if (trottlePosition > 90) appMaxPower = powerConstant - 10;
+  if (trottlePosition > 90 && opPr > 4) appMaxPower = powerConstant - 10;
 }
 void getDate() {
   if (kgyLock == true) {
