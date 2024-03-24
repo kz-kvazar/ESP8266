@@ -363,16 +363,18 @@ void regulatePower() {
   if ((!regulate && !appRegulate) || !checkValidData()) return;
 
   if (powerActive > 0 && millis() - lastRegulate > 20000) {
-    (opPr > 6 && powerActive < 1250) ? reg = 20 : reg = 10;
-    if (opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96) {
-      (powerConstant > 1000) ? setPower(powerConstant - 100) : setPower(900);
-      lastRegulate = millis() + 10000;
-    } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 57) {
+    (opPr > 7 && trottlePosition < 75) ? reg = 20 : reg = 10;
+    if ((opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96) && powerConstant != 900) {
+      (powerConstant > 1000) ? setPower(powerConstant - 200) : setPower(900);
+      lastRegulate = millis();
+      lastRegulate += 10000;
+    } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 56.9f) {
       checkActPower();
       checkThrottle();
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
       lastRegulate = millis();
-    } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && (maxPower - powerConstant >= reg) && trottlePosition < 90 && (appMaxPower - powerConstant >= reg) && resTemp < 56.6f) {
+      if(resTemp >= 57) lastRegulate += 10000; 
+    } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && (maxPower - powerConstant >= reg) && trottlePosition < 90 && (appMaxPower - powerConstant >= reg) && resTemp < 56.4f) {
       setPower(powerConstant + reg);
       lastRegulate = millis();
     } else if (opPr > 5 && trottlePosition < 80 && ((millis() - powerUpTime) >= 300000) && maxPower > appMaxPower && appMaxPower <= 1550) {
@@ -390,10 +392,16 @@ void regulatePower() {
   }
 }
 void checkActPower() {
-  if (powerActive > 1560) appMaxPower = powerConstant - 10;
+  if (powerActive > 1560){
+    if (avgTemp > 375 && avgTemp < 425){
+    appMaxPower = powerConstant - 10;
+  }else{
+    appMaxPower -= 10;
+  }
+  } 
 }
 void checkThrottle() {
-  if (trottlePosition > 90  && trottlePosition < 96 && (avgTemp > 370 || avgTemp < 425)) appMaxPower = powerConstant - 10;
+  if (trottlePosition > 90  && trottlePosition < 96 && avgTemp > 370 && avgTemp < 425) appMaxPower = powerConstant - 10;
 }
 void getDate() {
   if (kgyLock == true) {
