@@ -156,12 +156,12 @@ void setup() {
   pinMode(resetPin, OUTPUT);
   digitalWrite(resetPin, true);
 
-  // initialize the Serial
+  // initialize the //Serial
   Serial.begin(115200);
 
-  delay(2000);  // wait for serial port to connect. Needed for native USB port only
+  delay(2000);  // wait for //Serial port to connect. Needed for native USB port only
 
-  //Serial.println("\nStarting TelegramBot...");
+  ////Serial.println("\nStarting TelegramBot...");
 
   WiFi.begin(ssid, pass);
   WiFi.mode(WIFI_STA);
@@ -170,34 +170,34 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED) {
     switch (WiFi.status()) {
       case WL_NO_SSID_AVAIL:
-        Serial.println("[WiFi] SSID not found");
+        //Serial.println("[WiFi] SSID not found");
         break;
       case WL_CONNECT_FAILED:
-        Serial.print("[WiFi] Failed - WiFi not connected! Reason: ");
+        //Serial.print("[WiFi] Failed - WiFi not connected! Reason: ");
         return;
         break;
       case WL_CONNECTION_LOST:
-        Serial.println("[WiFi] Connection was lost");
+        //Serial.println("[WiFi] Connection was lost");
         break;
       case WL_SCAN_COMPLETED:
-        Serial.println("[WiFi] Scan is completed");
+        //Serial.println("[WiFi] Scan is completed");
         break;
       case WL_DISCONNECTED:
-        Serial.println("[WiFi] WiFi is disconnected");
+        //Serial.println("[WiFi] WiFi is disconnected");
         break;
       case WL_CONNECTED:
-        Serial.println("[WiFi] WiFi is connected!");
-        Serial.print("[WiFi] IP address: ");
-        Serial.println(WiFi.localIP());
+        //Serial.println("[WiFi] WiFi is connected!");
+        //Serial.print("[WiFi] IP address: ");
+        //Serial.println(WiFi.localIP());
         return;
         break;
       default:
-        Serial.print("[WiFi] WiFi Status: ");
-        Serial.println(WiFi.status());
+        //Serial.print("[WiFi] WiFi Status: ");
+        //Serial.println(WiFi.status());
         break;
     }
     digitalWrite(LED_BUILTIN_, true);
-    Serial.print('.');
+    //Serial.print('.');
     delay(3000);
     digitalWrite(LED_BUILTIN_, false);
     delay(3000);
@@ -223,8 +223,8 @@ void setup() {
   // myBot.setTelegramToken(token);
 
   // Check if all things are ok
-  // Serial.print("\nTest Telegram connection... ");
-  // myBot.begin() ? Serial.println("OK") : Serial.println("NOK");
+  // //Serial.print("\nTest Telegram connection... ");
+  // myBot.begin() ? //Serial.println("OK") : //Serial.println("NOK");
 
   // char welcome_msg[48];
   // snprintf(welcome_msg, 128, "BOT @%s is online", myBot.getBotName());
@@ -350,7 +350,7 @@ bool checkValidData() {
       || l3N > 600 || l3N < -10 || wnding1Temp > 900 || wnding1Temp < -40 || wnding2Temp > 900 || wnding2Temp < -40 || wnding3Temp > 900 || wnding3Temp < -40
       || bearing1Temp > 900 || bearing1Temp < -40 || bearing2Temp > 900 || bearing2Temp < -40) {
 
-    Serial.println("\ntrottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
+    //Serial.println("\ntrottlePosition = " + String(trottlePosition) + "\npowerConstant = " + String(powerConstant) + "\npowerActive = " + String(powerActive) + "\nopPr = " + String(opPr) + "\ntotalGenerated = " + totalGenerated);
     return false;
   } else {
     return true;
@@ -358,7 +358,7 @@ bool checkValidData() {
 }
 void regulatePower() {
   static uint32_t powerUpTime = millis();
-  static uint32_t lastRegulate = millis();
+  static long lastRegulate = millis();
 
   if ((!regulate && !appRegulate) || !checkValidData()) return;
 
@@ -366,17 +366,25 @@ void regulatePower() {
   if(wnding2Temp > wndAvg) wndAvg = wnding1Temp;
   if(wnding3Temp > wndAvg) wndAvg = wnding1Temp;
 
-  if (powerActive > 0 && millis() - lastRegulate > 20000) {
+  if (powerActive > 0 && millis() > lastRegulate && millis() - lastRegulate > 20000) {
     (opPr > 7 && trottlePosition < 75) ? reg = 20 : reg = 10;
     if ((opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96) && powerConstant != 900) {
       (powerConstant > 1000) ? setPower(powerConstant - 200) : setPower(900);
       lastRegulate = millis();
-    } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 56.8f || wndAvg >= 74.9f) {
+    } else if (opPr < 4 || trottlePosition > 90 || powerActive > 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 56.9f || wndAvg >= 74.9f) {
       checkActPower();
       checkThrottle();
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
       lastRegulate = millis();
-    } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && (maxPower - powerConstant >= reg) && trottlePosition < 90 && (appMaxPower - powerConstant >= reg) && resTemp < 56.3f && wndAvg < 74.4f) {
+
+      if(resTemp >= 56.9f || wndAvg >= 74.9f){
+      Serial.println("millis = " + String( millis()));
+      Serial.println("lastRegulate before =" + String(lastRegulate));
+      lastRegulate = lastRegulate + 15000;
+      Serial.println("lastRegulate after =" + String(lastRegulate));
+      } 
+
+    } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && (maxPower - powerConstant >= reg) && trottlePosition < 90 && (appMaxPower - powerConstant >= reg) && resTemp < 56.4f && wndAvg < 74.7f) {
       setPower(powerConstant + reg);
       lastRegulate = millis();
     } else if (opPr > 5 && trottlePosition < 80 && ((millis() - powerUpTime) >= 300000) && maxPower > appMaxPower && appMaxPower <= 1550) {
@@ -388,7 +396,10 @@ void regulatePower() {
     appMaxPower = 1560;
     maxPower = 1560;
     isStop = true;
-  } else if (lastRegulate > millis()) {
+   } else if ( lastRegulate > millis() && lastRegulate - millis() > 50000) {
+    Serial.println("reset timer = " + String(lastRegulate - millis() > 50000));
+    Serial.println("lastRegulate - millis =" + String(lastRegulate - millis()));
+
     lastRegulate = millis();
     powerUpTime = millis();
   }
@@ -408,11 +419,11 @@ void checkThrottle() {
 void getDate() {
   if (kgyLock == true) {
     sendKGYRequest();
-    //Serial.println("\nsendKGYRequest...");
+    ////Serial.println("\nsendKGYRequest...");
   }
   if (regLock == true) {
     sendRegistratorRequest();
-    //Serial.println("\nsendRegistratorRequest...");
+    ////Serial.println("\nsendRegistratorRequest...");
   }
   if (avgTemp > 1000 || avgTemp < -40 || avgTemp == 0 || getTime() % 2 != 0) return;
 
@@ -429,13 +440,13 @@ void getDate() {
 }
 void sendRegistratorRequest() {
   if (!clientRegistrator.connected() && !clientRegistrator.connect(registratorIP, serverPort)) {
-    Serial.println("\nclientRegistrator.connect ERROR...");
+    //Serial.println("\nclientRegistrator.connect ERROR...");
     opPr = 9999;  // Установка значения в 9999 при ошибке соединения
     resultRegistrator = "Ошибка соединения с регистратором!!! \nРегулирование невозможно.";
     return;
   } else {
     regLock = false;
-    Serial.println("\nclientRegistrator.onElseConnect...");
+    //Serial.println("\nclientRegistrator.onElseConnect...");
     transactionId = 7;
 
     request[0] = (transactionId >> 8);    // Старший байт Transaction ID
@@ -456,7 +467,7 @@ void sendRegistratorRequest() {
   // Создайте и отправьте запрос к регистратору
   clientRegistrator.onConnect([](void *arg, AsyncClient *c) {
     regLock = false;
-    Serial.println("\nclientRegistrator.onConnect...");
+    //Serial.println("\nclientRegistrator.onConnect...");
     // Убедитесь, что transactionId определен
 
     transactionId = 7;
@@ -477,7 +488,7 @@ void sendRegistratorRequest() {
   });
   // Установите обработчик ответа от регистратора
   clientRegistrator.onData([](void *arg, AsyncClient *c, void *data, size_t len) {
-    Serial.println("\nclientRegistrator.onData...");
+    //Serial.println("\nclientRegistrator.onData...");
     uint8_t *response = static_cast<uint8_t *>(data);  // Приведение типа указателя
     // Проверьте, что в ответе достаточно данных перед извлечением
     if (len >= 32) {
@@ -538,14 +549,14 @@ void sendRegistratorRequest() {
 
 void sendKGYRequest() {
   if (!clientKGY.connected() && !clientKGY.connect(serverIP, serverPort)) {
-    Serial.println("clientKGY.connect ERROR...");
+    //Serial.println("clientKGY.connect ERROR...");
     trottlePosition = 9999;
     powerConstant = 9999;
     powerActive = 9999;
     resultKGY = "Ошибка подключения к КГУ!!! \nРегулирование невозможно.";
     return;
   } else {
-    Serial.println("clientKGY.onElseConnect...");
+    //Serial.println("clientKGY.onElseConnect...");
     kgyLock = false;
     transactionId = 1;
 
@@ -566,7 +577,7 @@ void sendKGYRequest() {
   }
   // Создайте и отправьте запрос к КГУ
   clientKGY.onConnect([](void *arg, AsyncClient *c) {
-    Serial.println("clientKGY.onConnect...");
+    //Serial.println("clientKGY.onConnect...");
     kgyLock = false;
 
     transactionId = 1;
@@ -588,12 +599,12 @@ void sendKGYRequest() {
   });
   // Установите обработчик ответа от КГУ
   clientKGY.onData([](void *arg, AsyncClient *c, void *data, size_t len) {
-    //Serial.println("clientKGY.onData...");
+    ////Serial.println("clientKGY.onData...");
     if (len >= 10) {
       uint8_t *response = static_cast<uint8_t *>(data);
       transactionIdResponse = 0;
       transactionIdResponse = (((response[0] << 8) | response[1]));
-      Serial.println("clientKGY.onData..." + String(transactionIdResponse));
+      //Serial.println("clientKGY.onData..." + String(transactionIdResponse));
 
       if (transactionIdResponse == 1) {
         trottlePosition = (((response[9] << 8) | response[10]) / 10.0f);
