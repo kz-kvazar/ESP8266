@@ -1240,7 +1240,8 @@ int getDayOfMonthFromUnixTime() {
 uint32_t getTime() {
   uint32_t now = (millis() / 1000) + epochTime;
   currentHour = (now / 3600) % 24;
-  if (now < 1701730982 || millis() > 86400000*7) {
+  if (now < 1701730982 || millis() > 86400000) {
+    ESP.restart();
     delay(10000);
     digitalWrite(resetPin, LOW);   // Установить низкий уровень на D1 (RST)
     delay(100);                    // Подождать некоторое время
