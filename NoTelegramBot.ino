@@ -2,6 +2,7 @@
 
 //#include <AsyncTelegram2.h>
 #include <Adafruit_SleepyDog.h>
+#include <ArduinoJson.h>
 
 // Timezone definition
 #include <time.h>
@@ -10,6 +11,7 @@
 #ifdef ESP8266
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
+#include <ESP8266HTTPClient.h>
 //BearSSL::WiFiClientSecure client;
 //BearSSL::Session session;
 //BearSSL::X509List certificate(telegram_cert);
@@ -144,6 +146,7 @@ bool kgyLock = true;
 bool regLock = true;
 bool isAlarm = false;
 bool isStop = false;
+bool engineIsRunning = false;
 uint32_t epochTime = 0;
 //String reset = "";  //String(ESP.getResetInfo()) + "\n";
 
@@ -363,8 +366,9 @@ void regulatePower() {
   if ((!regulate && !appRegulate) || !checkValidData()) return;
 
   float wndAvg = wnding1Temp;
-  if(wnding2Temp > wndAvg) wndAvg = wnding1Temp;
-  if(wnding3Temp > wndAvg) wndAvg = wnding1Temp;
+  if (wnding2Temp > wndAvg) wndAvg = wnding1Temp;
+  if (wnding3Temp > wndAvg) wndAvg = wnding1Temp;
+  if (powerActive > 0) engineIsRunning = true;
 
   if (powerActive > 0 && millis() > lastRegulate && millis() - lastRegulate > 20000) {
     (opPr > 7 && trottlePosition < 75) ? reg = 20 : reg = 10;
@@ -377,12 +381,12 @@ void regulatePower() {
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
       lastRegulate = millis();
 
-      if(resTemp >= 56.9f || wndAvg >= 74.9f){
-      Serial.println("millis = " + String( millis()));
-      Serial.println("lastRegulate before =" + String(lastRegulate));
-      lastRegulate = lastRegulate + 30000;
-      Serial.println("lastRegulate after =" + String(lastRegulate));
-      } 
+      if (resTemp >= 56.9f || wndAvg >= 74.9f) {
+        Serial.println("millis = " + String(millis()));
+        Serial.println("lastRegulate before =" + String(lastRegulate));
+        lastRegulate = lastRegulate + 30000;
+        Serial.println("lastRegulate after =" + String(lastRegulate));
+      }
 
     } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && (maxPower - powerConstant >= reg) && trottlePosition < 90 && (appMaxPower - powerConstant >= reg) && resTemp < 56.4f && wndAvg < 74.7f) {
       setPower(powerConstant + reg);
@@ -396,7 +400,7 @@ void regulatePower() {
     appMaxPower = 1560;
     maxPower = 1560;
     isStop = true;
-   } else if ( lastRegulate > millis() && lastRegulate - millis() > 50000) {
+  } else if (lastRegulate > millis() && lastRegulate - millis() > 50000) {
     Serial.println("reset timer = " + String(lastRegulate - millis() > 50000));
     Serial.println("lastRegulate - millis =" + String(lastRegulate - millis()));
 
@@ -405,16 +409,16 @@ void regulatePower() {
   }
 }
 void checkActPower() {
-  if (powerActive > 1560){
-    if (avgTemp > 375 && avgTemp < 425){
-    appMaxPower = powerConstant - 10;
-  }else{
-    appMaxPower -= 10;
+  if (powerActive > 1560) {
+    if (avgTemp > 375 && avgTemp < 425) {
+      appMaxPower = powerConstant - 10;
+    } else {
+      appMaxPower -= 10;
+    }
   }
-  } 
 }
 void checkThrottle() {
-  if (trottlePosition > 90  && trottlePosition < 96 && avgTemp > 370 && avgTemp < 425) appMaxPower = powerConstant - 10;
+  if (trottlePosition > 90 && trottlePosition < 96 && avgTemp > 370 && avgTemp < 425) appMaxPower = powerConstant - 10;
 }
 void getDate() {
   if (kgyLock == true) {
@@ -436,6 +440,30 @@ void getDate() {
     Firebase.RTDB.setBool(&fbdo, "now/alarm", true);  //отправляет аларм на сервер если машина остановилась
     delay(2000);
     Firebase.RTDB.setBool(&fbdo, "now/alarm", false);
+  }
+
+  if (engineIsRunning && powerActive == 0 && avgTemp < 100 /* || (millis() > 30000 && millis() < 35000)*/) {
+    //Serial.println("-=Get current time=-");
+    engineIsRunning = false;
+    WiFiClient client;
+    HTTPClient http;
+    http.begin(client, "http://worldtimeapi.org/api/timezone/Europe/Kiev");
+    int httpCode = http.GET();
+    if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      StaticJsonDocument<1024> doc;
+      DeserializationError error = deserializeJson(doc, payload);
+      if (!error) {
+        String datetime = doc["datetime"].as<String>();
+      if (datetime.length() > 13) {
+        datetime = datetime.substring(0, datetime.length() - 13);
+      }
+        Firebase.RTDB.setString(&fbdo, "now/engineStopTime/", datetime);
+        //Serial.println(" -= Time is now =-");
+        //Serial.println(datetime);
+      }
+  }
+  http.end();
   }
 }
 void sendRegistratorRequest() {
@@ -1000,11 +1028,9 @@ void pushToFirebase() {
     Firebase.RTDB.setFloat(&fbdo, "now/trottlePosition", trottlePosition);
   }
 
-  if (CH4_KGY > 110 || CH4_KGY < -10 )
-  {
+  if (CH4_KGY > 110 || CH4_KGY < -10) {
     Firebase.RTDB.setFloat(&fbdo, "now/CH4_KGY", -255);
-  }
-  else {
+  } else {
     Firebase.RTDB.setFloat(&fbdo, "now/CH4_KGY", CH4_KGY);
   }
 
@@ -1129,11 +1155,9 @@ void firebaseReport() {
       Firebase.RTDB.setFloat(&fbdo, date + "/trottlePosition", trottlePosition);
     }
 
-    if ( CH4_KGY > 110 || CH4_KGY < -10 )
-    {
+    if (CH4_KGY > 110 || CH4_KGY < -10) {
       Firebase.RTDB.setFloat(&fbdo, date + "/CH4_KGY", -255);
-    }
-    else {
+    } else {
       Firebase.RTDB.setFloat(&fbdo, date + "/CH4_KGY", CH4_KGY);
     }
 
