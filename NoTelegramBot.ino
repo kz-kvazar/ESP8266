@@ -375,16 +375,16 @@ void regulatePower() {
     if ((opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96) && powerConstant != 900) {
       (powerConstant > 1000) ? setPower(powerConstant - 200) : setPower(900);
       lastRegulate = millis();
-    } else if (opPr <= 4 || trottlePosition >= 90 || powerActive >= 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 56.9f || wndAvg >= 74.9f) {
+    } else if (opPr <= 4 || trottlePosition >= 90 || powerActive >= 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 56.9f || wndAvg >= 72.9f) {
       checkActPower();
       //checkThrottle();
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
       lastRegulate = millis();
 
-      if (resTemp >= 56.9f || wndAvg >= 74.9f) {
+      if (resTemp >= 56.9f || wndAvg >= 72.9f) {
         Serial.println("millis = " + String(millis()));
         Serial.println("lastRegulate before =" + String(lastRegulate));
-        lastRegulate = lastRegulate + 30000;
+        lastRegulate = lastRegulate + 40000;
         Serial.println("lastRegulate after =" + String(lastRegulate));
       }
 
@@ -440,11 +440,7 @@ void getDate() {
     Firebase.RTDB.setBool(&fbdo, "now/alarm", true);  //отправляет аларм на сервер если машина остановилась
     delay(2000);
     Firebase.RTDB.setBool(&fbdo, "now/alarm", false);
-  }
-
-  if (engineIsRunning && powerActive == 0 && avgTemp < 100 /* || (millis() > 30000 && millis() < 35000)*/) {
-    //Serial.println("-=Get current time=-");
-    engineIsRunning = false;
+    delay(2000);
     WiFiClient client;
     HTTPClient http;
     http.begin(client, "http://worldtimeapi.org/api/timezone/Europe/Kiev");
@@ -455,16 +451,38 @@ void getDate() {
       DeserializationError error = deserializeJson(doc, payload);
       if (!error) {
         String datetime = doc["datetime"].as<String>();
-      if (datetime.length() > 13) {
-        datetime = datetime.substring(0, datetime.length() - 13);
+        if (datetime.length() > 13) {
+          datetime = datetime.substring(0, datetime.length() - 13);
+        }
+        Firebase.RTDB.setString(&fbdo, "now/engineStopTime/", datetime);  // отправит время остановки
       }
-        Firebase.RTDB.setString(&fbdo, "now/engineStopTime/", datetime);
-        //Serial.println(" -= Time is now =-");
-        //Serial.println(datetime);
-      }
+    }
+    http.end();
   }
-  http.end();
-  }
+
+  // if (engineIsRunning && powerActive == 0 && avgTemp < 100 /* || (millis() > 30000 && millis() < 35000)*/) {
+  //   //Serial.println("-=Get current time=-");
+  //   engineIsRunning = false;
+  //   WiFiClient client;
+  //   HTTPClient http;
+  //   http.begin(client, "http://worldtimeapi.org/api/timezone/Europe/Kiev");
+  //   int httpCode = http.GET();
+  //   if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
+  //     String payload = http.getString();
+  //     StaticJsonDocument<1024> doc;
+  //     DeserializationError error = deserializeJson(doc, payload);
+  //     if (!error) {
+  //       String datetime = doc["datetime"].as<String>();
+  //     if (datetime.length() > 13) {
+  //       datetime = datetime.substring(0, datetime.length() - 13);
+  //     }
+  //       Firebase.RTDB.setString(&fbdo, "now/engineStopTime/", datetime);
+  //       //Serial.println(" -= Time is now =-");
+  //       //Serial.println(datetime);
+  //     }
+  //   }
+  //     http.end();
+  // }
 }
 void sendRegistratorRequest() {
   if (!clientRegistrator.connected() && !clientRegistrator.connect(registratorIP, serverPort)) {
