@@ -279,60 +279,37 @@ void loop() {
     epochTime = ntpClient.getEpochTime();
   }
 
-  // TBMessage msg;
-  // if (myBot.getNewMessage(msg) || ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport)) {
-  //   blink();
-  //   if (msg.text == "/report@KGY_operator_bot" || msg.text == "/report") {
-  //     blink();
-  //     if (hourReport) {
-  //       hourReport = false;
-  //       myBot.sendToChannel(channel, "Опция отчетности отключена", true);
-  //     } else {
-  //       hours = currentHour;
-  //       hourReport = true;
-  //       myBot.sendToChannel(channel, "Опция отчетности включена", true);
-  //     }
-  //   } else if (msg.text == "/regulate@KGY_operator_bot" || msg.text == "/regulate") {
-  //     blink();
-  //     if (regulate) {
-  //       regulate = false;
-  //       myBot.sendToChannel(channel, "Опция регулирования отключена", true);
-  //     } else {
-  //       regulate = true;
-  //       myBot.sendToChannel(channel, "Опция регулирования включена", true);
-  //     }
-  //   } else if (msg.text == "/base@KGY_operator_bot" || msg.text == "/base") {
-  //     if (firebase) {
-  //       firebase = false;
-  //       myBot.sendToChannel(channel, "FireBase деактивирован", true);
-  //     } else {
-  //       firebase = true;
-  //       myBot.sendToChannel(channel, "FireBase активирован", true);
-  //     }
-  //   } else if (msg.text == "/status" || msg.text == "/status@KGY_operator_bot" || ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport)) {
-  //     digitalWrite(LED_BUILTIN_, false);
-  //     if (!regulate && !firebase && !appRegulate) {
-  //       getDate();
-  //       delay(5500);
-  //     }
-  //     String message;
-  //     stamp.getDateTime(getTime());
-  //     message = String(stamp.year) + "." + String(stamp.month) + "." + String(stamp.day) + "-" + String(stamp.hour) + ":" + String(stamp.minute) + ":" + String(stamp.second) + "\n";
-  //     message += resultKGY;
-  //     message += resultRegistrator;
-  //     if (monthStartGenerated != 0) {
-  //       message += "Техническая генерация: " + String((totalGenerated - monthStartGenerated) / 1000) + " MW\n";
-  //     }
-  //     message += "Максимальная мощность: " + String(appMaxPower) + "\n";
-  //     if (appRegulate) message += "Удаленное регулирование включено\n";
-  //     if (isAlarm) message += "-Обнаружена ошибка КГУ-";
-  //     myBot.sendToChannel(channel, message, true);
-  //     if ((currentHour - hours == 1 || currentHour - hours == -23) && hourReport) {
-  //       hours = currentHour;
-  //     }
-  //     digitalWrite(LED_BUILTIN_, true);
-  //   }
-  // }
+  if (engineIsRunning && powerActive == 0) {
+    Serial.println("engine is stoped. sending report");
+    WiFiClient client;
+    HTTPClient http;
+    http.begin(client, "http://worldtimeapi.org/api/timezone/Europe/Kiev");
+    int httpCode = http.GET();
+    if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      StaticJsonDocument<1024> doc;
+      DeserializationError error = deserializeJson(doc, payload);
+      if (!error) {
+        String datetime = doc["datetime"].as<String>();
+        if (datetime.length() > 13) {
+          datetime = datetime.substring(0, datetime.length() - 13);
+        } else {
+          delay(30000);
+          Serial.println("datetime.length() > 13 false");
+        }
+        engineIsRunning = false;
+        Firebase.RTDB.setString(&fbdo, "now/engineStopTime/", datetime);
+        Serial.println("now/engineStopTime/ sending!!!");
+      } else {
+        delay(30000);
+        Serial.println("!error false");
+      }
+    } else {
+      delay(30000);
+      Serial.println("httpCode == HTTP_CODE_OK");
+    }
+    http.end();
+  }
 }
 
 void blink() {
@@ -363,12 +340,18 @@ void regulatePower() {
   static uint32_t powerUpTime = millis();
   static long lastRegulate = millis();
 
-  if ((!regulate && !appRegulate) || !checkValidData()) return;
+  if (!checkValidData()) return;
+
+  if (powerActive > 1 && opPr > 1 && !engineIsRunning) {
+    engineIsRunning = true;
+    Serial.println("engineIsRunning = true");
+  }
+
+  if (!regulate && !appRegulate) return;
 
   float wndAvg = wnding1Temp;
   if (wnding2Temp > wndAvg) wndAvg = wnding1Temp;
   if (wnding3Temp > wndAvg) wndAvg = wnding1Temp;
-  if (powerActive > 0) engineIsRunning = true;
 
   if (powerActive > 0 && millis() > lastRegulate && millis() - lastRegulate > 20000) {
     (opPr > 7 && trottlePosition < 75) ? reg = 20 : reg = 10;
@@ -440,49 +423,7 @@ void getDate() {
     Firebase.RTDB.setBool(&fbdo, "now/alarm", true);  //отправляет аларм на сервер если машина остановилась
     delay(2000);
     Firebase.RTDB.setBool(&fbdo, "now/alarm", false);
-    delay(2000);
-    WiFiClient client;
-    HTTPClient http;
-    http.begin(client, "http://worldtimeapi.org/api/timezone/Europe/Kiev");
-    int httpCode = http.GET();
-    if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
-      String payload = http.getString();
-      StaticJsonDocument<1024> doc;
-      DeserializationError error = deserializeJson(doc, payload);
-      if (!error) {
-        String datetime = doc["datetime"].as<String>();
-        if (datetime.length() > 13) {
-          datetime = datetime.substring(0, datetime.length() - 13);
-        }
-        Firebase.RTDB.setString(&fbdo, "now/engineStopTime/", datetime);  // отправит время остановки
-      }
-    }
-    http.end();
   }
-
-  // if (engineIsRunning && powerActive == 0 && avgTemp < 100 /* || (millis() > 30000 && millis() < 35000)*/) {
-  //   //Serial.println("-=Get current time=-");
-  //   engineIsRunning = false;
-  //   WiFiClient client;
-  //   HTTPClient http;
-  //   http.begin(client, "http://worldtimeapi.org/api/timezone/Europe/Kiev");
-  //   int httpCode = http.GET();
-  //   if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
-  //     String payload = http.getString();
-  //     StaticJsonDocument<1024> doc;
-  //     DeserializationError error = deserializeJson(doc, payload);
-  //     if (!error) {
-  //       String datetime = doc["datetime"].as<String>();
-  //     if (datetime.length() > 13) {
-  //       datetime = datetime.substring(0, datetime.length() - 13);
-  //     }
-  //       Firebase.RTDB.setString(&fbdo, "now/engineStopTime/", datetime);
-  //       //Serial.println(" -= Time is now =-");
-  //       //Serial.println(datetime);
-  //     }
-  //   }
-  //     http.end();
-  // }
 }
 void sendRegistratorRequest() {
   if (!clientRegistrator.connected() && !clientRegistrator.connect(registratorIP, serverPort)) {
