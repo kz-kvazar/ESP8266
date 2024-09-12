@@ -358,7 +358,7 @@ void regulatePower() {
     if ((opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96) && powerConstant != 900) {
       (powerConstant > 1000) ? setPower(powerConstant - 200) : setPower(900);
       lastRegulate = millis();
-    } else if (opPr <= 4 || trottlePosition >= 90 || powerActive >= 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 56.9f || wndAvg >= 72.9f) {
+    } else if (opPr <= 4 || trottlePosition >= 90 || powerActive >= 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 56.9f || wndAvg >= 72.9f || avgTemp < 370) {
       checkActPower();
       //checkThrottle();
       powerConstant > 1000 ? setPower(powerConstant - 10) : setPower(900);
@@ -371,7 +371,7 @@ void regulatePower() {
         Serial.println("lastRegulate after =" + String(lastRegulate));
       }
 
-    } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && (maxPower - powerConstant >= reg) && trottlePosition < 90 && (appMaxPower - powerConstant >= reg) && resTemp < 56.4f && wndAvg < 74.7f) {
+    } else if (opPr > 5 && ((powerConstant - powerActive) <= 50) && (maxPower - powerConstant >= reg) && trottlePosition < 90 && (appMaxPower - powerConstant >= reg) && resTemp < 56.4f && wndAvg < 72.7f && avgTemp > 380) {
       setPower(powerConstant + reg);
       lastRegulate = millis();
     } else if (opPr > 5 && trottlePosition < 80 && ((millis() - powerUpTime) >= 300000) && appMaxPower <= 1560 - reg) {
