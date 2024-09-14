@@ -67,6 +67,7 @@ NTPClient ntpClient(udp, "pool.ntp.org", 2 * 60 * 60);
 
 const IPAddress serverIP(172, 30, 40, 50);     // IP-адрес сервера Modbus
 const IPAddress registratorIP(10, 70, 0, 28);  // IP-адрес сервера Modbus
+const IPAddress ktpIP(10, 70, 0, 27);
 
 const int serverPort = 502;  // Порт Modbus
 uint8_t transactionId = 0;   // Уникальный идентификатор транзакции
@@ -74,6 +75,7 @@ uint8_t transactionIdResponse = 0;
 
 AsyncClient clientRegistrator;
 AsyncClient clientKGY;
+AsyncClient clientKTP;
 
 // const char *ssid = "matrix";  // SSID WiFi network
 // const char *pass = "777qaz777qaz";  // Password  WiFi network
@@ -131,6 +133,10 @@ int cleanOil = 0;
 int avgTemp = 0;
 float resTemp = 0;
 
+int U12 = -255;
+int U23 = -255;
+int U31 = -255;
+
 
 uint8_t request[12] = { 0 };
 uint8_t requestWright[15] = { 0 };
@@ -143,6 +149,7 @@ bool skipFirst = false;
 bool appRegulate = false;
 bool firebase = true;
 bool kgyLock = true;
+bool ktpLock = true;
 bool regLock = true;
 bool isAlarm = false;
 bool isStop = false;
@@ -412,6 +419,9 @@ void getDate() {
     sendRegistratorRequest();
     ////Serial.println("\nsendRegistratorRequest...");
   }
+  if (ktpLock == true) {
+    sendKtpRequest();
+  }
   if (avgTemp > 1000 || avgTemp < -40 || avgTemp == 0 || getTime() % 2 != 0) return;
 
   Firebase.RTDB.setInt(&fbdo, "avgTemp/" + String(0), avgTemp);
@@ -425,6 +435,90 @@ void getDate() {
     Firebase.RTDB.setBool(&fbdo, "now/alarm", false);
   }
 }
+void sendKtpRequest() {
+  if (!clientKTP.connected() && !clientKTP.connect(ktpIP, serverPort)) {
+    //Serial.println("\nclientRegistrator.connect ERROR...");
+    resultRegistrator = "Ошибка соединения с КТП-10кВ !!!";
+    return;
+  } else {
+    ktpLock = false;
+    //Serial.println("\nclientRegistrator.onElseConnect...");
+    transactionId = 23;
+    //int startRegister = 402014;
+    //int quantity = 3;
+
+    request[0] = (transactionId >> 8);    // Старший байт Transaction ID
+    request[1] = (transactionId & 0xFF);  // Младший байт Transaction ID
+    request[2] = 0;
+    request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+    request[4] = 0;
+    request[5] = 6;                       // Длина данных
+    request[6] = 1;                       // Адрес устройства Modbus
+    request[7] = 3;                       // Код функции (чтение Holding Register)
+    request[8] = (402014 - 400001) >> 8;  // Адрес старшего байта регистра
+    request[9] = (402014 - 400001) & 0xFF;
+    request[10] = 3 >> 8;    // Количество регистров (старший байт)
+    request[11] = 3 & 0xFF;  // Количество регистров (младший байт)
+    // Отправьте запрос
+    clientKTP.write(reinterpret_cast<const char *>(request), sizeof(request));
+  }
+  // Создайте и отправьте запрос к регистратору
+  clientKTP.onConnect([](void *arg, AsyncClient *c) {
+    ktpLock = false;
+    //Serial.println("\nclientRegistrator.onConnect...");
+    // Убедитесь, что transactionId определен
+
+    transactionId = 23;
+
+    request[0] = (transactionId >> 8);    // Старший байт Transaction ID
+    request[1] = (transactionId & 0xFF);  // Младший байт Transaction ID
+    request[2] = 0;
+    request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+    request[4] = 0;
+    request[5] = 6;                       // Длина данных
+    request[6] = 1;                       // Адрес устройства Modbus
+    request[7] = 3;                       // Код функции (чтение Holding Register)
+    request[8] = (402014 - 400001) >> 8;  // Адрес старшего байта регистра
+    request[9] = (402014 - 400001) & 0xFF;
+    request[10] = 3 >> 8;    // Количество регистров (старший байт)
+    request[11] = 3 & 0xFF;  // Количество регистров (младший байт)
+    // Отправьте запрос
+    c->write(reinterpret_cast<const char *>(request), sizeof(request));
+  });
+  // Установите обработчик ответа от регистратора
+  clientKTP.onData([](void *arg, AsyncClient *c, void *data, size_t len) {
+    //Serial.println("\nclientRegistrator.onData...");
+    uint8_t *response = static_cast<uint8_t *>(data);  // Приведение типа указателя
+    // Проверьте, что в ответе достаточно данных перед извлечением
+    if (len >= 8) {
+
+      U12 = (response[9] << 8) | response[9 + 1];
+      U23 = (response[9 + 1 * 2] << 8) | response[9 + 1 * 2 + 1];
+      U31 = (response[9 + 2 * 2] << 8) | response[9 + 2 * 2 + 1];
+
+      Serial.print(U12);
+      Serial.print("\n");
+      Serial.print(U23);
+      Serial.print("\n");
+      Serial.print(U31);
+      Serial.print("\n");
+    }
+    //c->close(false);
+    ktpLock = true;
+  });
+  clientKTP.onError([](void *arg, AsyncClient *c, int8_t error) {
+    resultRegistrator = "Ошибка соединения с КТП-10кВ!!!";
+    U12 = -255;
+    U23 = -255;
+    U31 = -255;
+    Serial.println("\nclientKtp.onError ERROR...");
+  });
+  clientKTP.onDisconnect([](void *arg, AsyncClient *c) {
+    ktpLock = true;
+    Serial.println("\nclientKtp.onDisconect...");
+  });
+}
+
 void sendRegistratorRequest() {
   if (!clientRegistrator.connected() && !clientRegistrator.connect(registratorIP, serverPort)) {
     //Serial.println("\nclientRegistrator.connect ERROR...");
@@ -475,7 +569,7 @@ void sendRegistratorRequest() {
   });
   // Установите обработчик ответа от регистратора
   clientRegistrator.onData([](void *arg, AsyncClient *c, void *data, size_t len) {
-    //Serial.println("\nclientRegistrator.onData...");
+    Serial.println("\nclientRegistrator.onData...");
     uint8_t *response = static_cast<uint8_t *>(data);  // Приведение типа указателя
     // Проверьте, что в ответе достаточно данных перед извлечением
     if (len >= 32) {
@@ -971,9 +1065,15 @@ void sendKGYRequest() {
   });
 }
 void pushToFirebase() {
-  // if (!checkValidData()) {
-  //   return;
-  // }
+  if(U12 < 0 || U23 < 0 || U31 < 0){
+    Firebase.RTDB.setInt(&fbdo, "now/U12", -255);
+    Firebase.RTDB.setInt(&fbdo, "now/U23", -255);
+    Firebase.RTDB.setInt(&fbdo, "now/U31", -255);
+  }else {
+    Firebase.RTDB.setInt(&fbdo, "now/U12", U12);
+    Firebase.RTDB.setInt(&fbdo, "now/U23", U23);
+    Firebase.RTDB.setInt(&fbdo, "now/U31", U31);
+  }
 
   if (opPr > 40 || opPr < -5) {
     Firebase.RTDB.setFloat(&fbdo, "now/opPresher", -255);
@@ -1194,7 +1294,11 @@ void firebaseReport() {
     Firebase.RTDB.setFloat(&fbdo, date + "/CH4_2", CH4_2p);
     Firebase.RTDB.setFloat(&fbdo, date + "/gtsPresher", gtsPr);
     Firebase.RTDB.setFloat(&fbdo, date + "/kgyPresher", kgyPr);
+    Firebase.RTDB.setInt(&fbdo, date + "/U12", U12);
+    Firebase.RTDB.setInt(&fbdo, date + "/U23", U23);
+    Firebase.RTDB.setInt(&fbdo, date + "/U31", U31);
     Firebase.RTDB.setString(&fbdo, date + "/date", now);
+    
   }
 }
 void monthGenerated() {
