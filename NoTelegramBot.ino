@@ -154,6 +154,7 @@ bool regLock = true;
 bool isAlarm = false;
 bool isStop = false;
 bool engineIsRunning = false;
+bool isMixError = false;
 uint32_t epochTime = 0;
 //String reset = "";  //String(ESP.getResetInfo()) + "\n";
 
@@ -361,9 +362,13 @@ void regulatePower() {
   if (wnding3Temp > wndAvg) wndAvg = wnding1Temp;
 
   if (powerActive > 0 && millis() > lastRegulate && millis() - lastRegulate > 20000) {
-    (opPr > 7 && trottlePosition < 75) ? reg = 20 : reg = 10;
+    (opPr > 7 && trottlePosition < 75 && CH4_KGY > 27.5f) ? reg = 20 : reg = 10;
     if ((opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96) && powerConstant != 810) {
-      (powerConstant > 1010) ? setPower(powerConstant - 200) : setPower(810);
+      if (isMixError) {
+        setPower(810);
+      } else {
+        (powerConstant > 1010) ? setPower(powerConstant - 200) : setPower(810);
+      }
       lastRegulate = millis();
     } else if (opPr <= 4 || trottlePosition >= 90 || powerActive >= 1560 || powerConstant > maxPower || powerConstant > appMaxPower || resTemp >= 56.9f || wndAvg >= 72.9f || avgTemp < 375) {
       checkActPower();
@@ -385,7 +390,7 @@ void regulatePower() {
       appMaxPower += reg;
       powerUpTime = millis();
     }
-  } else if (powerActive <= 0 && powerConstant != 800 ) {
+  } else if (powerActive <= 0 && powerConstant != 800) {
     setPower(800);
     appMaxPower = 1560;
     maxPower = 1560;
@@ -495,15 +500,9 @@ void sendKtpRequest() {
       U12 = (response[9] << 8) | response[9 + 1];
       U23 = (response[9 + 1 * 2] << 8) | response[9 + 1 * 2 + 1];
       U31 = (response[9 + 2 * 2] << 8) | response[9 + 2 * 2 + 1];
-
-      Serial.print(U12);
-      Serial.print("\n");
-      Serial.print(U23);
-      Serial.print("\n");
-      Serial.print(U31);
-      Serial.print("\n");
     }
     //c->close(false);
+    Serial.println("\nclientKtp.onData...");
     ktpLock = true;
   });
   clientKTP.onError([](void *arg, AsyncClient *c, int8_t error) {
@@ -754,6 +753,30 @@ void sendKGYRequest() {
         boolean bit8 = ((values >> 8) & 1) == 0;  // error bit
 
         isAlarm = (bit7 | bit8);
+
+        transactionId = 13;
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(9118 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(9118 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 1;  // Количество регистров для чтения (1)
+
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      }
+
+      else if (transactionIdResponse == 13) {
+        short values = (response[9] << 8) | response[10];
+
+        isMixError = (values >> 6);  // Mix alarm bit
+        Serial.print("MIX_error = ");
+        Serial.println(isMixError);
 
         transactionId = 6;
         request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
@@ -1065,11 +1088,11 @@ void sendKGYRequest() {
   });
 }
 void pushToFirebase() {
-  if(U12 < 0 || U23 < 0 || U31 < 0){
+  if (U12 < 0 || U23 < 0 || U31 < 0) {
     Firebase.RTDB.setInt(&fbdo, "now/U12", -255);
     Firebase.RTDB.setInt(&fbdo, "now/U23", -255);
     Firebase.RTDB.setInt(&fbdo, "now/U31", -255);
-  }else {
+  } else {
     Firebase.RTDB.setInt(&fbdo, "now/U12", U12);
     Firebase.RTDB.setInt(&fbdo, "now/U23", U23);
     Firebase.RTDB.setInt(&fbdo, "now/U31", U31);
@@ -1298,7 +1321,6 @@ void firebaseReport() {
     Firebase.RTDB.setInt(&fbdo, date + "/U23", U23);
     Firebase.RTDB.setInt(&fbdo, date + "/U31", U31);
     Firebase.RTDB.setString(&fbdo, date + "/date", now);
-    
   }
 }
 void monthGenerated() {
