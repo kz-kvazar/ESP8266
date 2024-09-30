@@ -363,7 +363,7 @@ void regulatePower() {
 
   if (powerActive > 0 && millis() > lastRegulate && millis() - lastRegulate > 20000) {
     (opPr > 7 && trottlePosition < 75 && CH4_KGY > 27.5f) ? reg = 20 : reg = 10;
-    if ((opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96) && powerConstant != 810) {
+    if ((opPr < 3 || avgTemp > 450 || avgTemp < 330 || trottlePosition > 96 || isMixError) && powerConstant != 810) {
       if (isMixError) {
         setPower(810);
       } else {
