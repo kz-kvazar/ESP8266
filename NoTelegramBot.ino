@@ -117,7 +117,8 @@ float bearing2Temp = 9999;
 uint16_t l1N = 9999;
 uint16_t l2N = 9999;
 uint16_t l3N = 9999;
-float gasTemp = 9999;
+float gasTempIN = 9999;
+float gasTempOUT = 9999;
 float gtsPr = 9999;
 float kgyPr = 9999;
 float opPr = 9999;
@@ -334,7 +335,7 @@ bool checkValidData() {
 
   if (trottlePosition > 100 || trottlePosition < -5 || powerConstant > 1560 || powerConstant < 0 || powerActive > 2000
       || powerActive < -300 || opPr > 40 || opPr < -5 || totalGenerated == 0 || cleanOil > 110 || cleanOil < -5 || avgTemp > 600 || avgTemp < -40
-      || resTemp > 120 || resTemp < -40 || CH4_KGY > 110 || CH4_KGY < -10 || gasTemp < -40 || gasTemp > 900 || l1N > 600 || l1N < -10 || l2N > 600 || l2N < -10
+      || resTemp > 120 || resTemp < -40 || CH4_KGY > 110 || CH4_KGY < -10 || gasTempIN < -50 || gasTempIN > 900 || gasTempOUT < -50 || gasTempOUT > 900 || l1N > 600 || l1N < -10 || l2N > 600 || l2N < -10
       || l3N > 600 || l3N < -10 || wnding1Temp > 900 || wnding1Temp < -40 || wnding2Temp > 900 || wnding2Temp < -40 || wnding3Temp > 900 || wnding3Temp < -40
       || bearing1Temp > 900 || bearing1Temp < -40 || bearing2Temp > 900 || bearing2Temp < -40) {
 
@@ -775,8 +776,8 @@ void sendKGYRequest() {
         short values = (response[9] << 8) | response[10];
 
         isMixError = (values >> 6);  // Mix alarm bit
-        Serial.print("MIX_error = ");
-        Serial.println(isMixError);
+        // Serial.print("MIX_error = ");
+        // Serial.println(isMixError);
 
         transactionId = 6;
         request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
@@ -889,7 +890,25 @@ void sendKGYRequest() {
 
         c->write(reinterpret_cast<const char *>(request), sizeof(request));
       } else if (transactionIdResponse == 12) {
-        gasTemp = (((response[9] << 8) | response[10]) / 10.0f);
+        gasTempOUT = (((response[9] << 8) | response[10]) / 10.0f);
+
+        transactionId = 23;
+        request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
+        request[1] = (uint8_t)(transactionId & 0xFF);  // Младший байт Transaction ID
+        request[2] = 0;
+        request[3] = 0;  // Protocol ID (0 для Modbus TCP)
+        request[4] = 0;
+        request[5] = 6;                       // Длина данных
+        request[6] = 1;                       // Адрес устройства Modbus
+        request[7] = 3;                       // Код функции (чтение Holding Register)
+        request[8] = (uint8_t)(9174 >> 8);    // Старший байт адреса регистра
+        request[9] = (uint8_t)(9174 & 0xFF);  // Младший байт адреса регистра
+        request[10] = 0;
+        request[11] = 1;  // Количество регистров для чтения (1)
+
+        c->write(reinterpret_cast<const char *>(request), sizeof(request));
+      } else if (transactionIdResponse == 23) {
+        gasTempIN = (((response[9] << 8) | response[10]) / 10.0f);
 
         transactionId = 15;
         request[0] = (uint8_t)(transactionId >> 8);    // Старший байт Transaction ID
@@ -1088,6 +1107,13 @@ void sendKGYRequest() {
   });
 }
 void pushToFirebase() {
+  
+  Firebase.RTDB.setFloat(&fbdo, "now/CH4_1", CH4_1p);
+  Firebase.RTDB.setFloat(&fbdo, "now/CH4_2", CH4_2p);
+  Firebase.RTDB.setFloat(&fbdo, "now/gtsPresher", gtsPr);
+  Firebase.RTDB.setFloat(&fbdo, "now/kgyPresher", kgyPr);
+  Firebase.RTDB.setBool(&fbdo, "now/alarm", isAlarm);
+
   if (U12 < 0 || U23 < 0 || U31 < 0) {
     Firebase.RTDB.setInt(&fbdo, "now/U12", -255);
     Firebase.RTDB.setInt(&fbdo, "now/U23", -255);
@@ -1134,10 +1160,16 @@ void pushToFirebase() {
     Firebase.RTDB.setFloat(&fbdo, "now/bearing2Temp", bearing2Temp);
   }
 
-  if (gasTemp < -40 || gasTemp > 900) {
-    Firebase.RTDB.setFloat(&fbdo, "now/gasTemp", -255);
+  if (gasTempIN < -50 || gasTempIN > 900) {
+    Firebase.RTDB.setFloat(&fbdo, "now/gasTempIN", -255);
   } else {
-    Firebase.RTDB.setFloat(&fbdo, "now/gasTemp", gasTemp);
+    Firebase.RTDB.setFloat(&fbdo, "now/gasTempIN", gasTempIN);
+  }
+
+  if (gasTempOUT < -50 || gasTempOUT > 900) {
+    Firebase.RTDB.setFloat(&fbdo, "now/gasTempOUT", -255);
+  } else {
+    Firebase.RTDB.setFloat(&fbdo, "now/gasTempOUT", gasTempOUT);
   }
 
   if (l1N > 600 || l1N < -10 || l2N > 600 || l2N < -10 || l3N > 600 || l3N < -10) {
@@ -1186,13 +1218,6 @@ void pushToFirebase() {
     Firebase.RTDB.setFloat(&fbdo, "now/resTemp", resTemp);
   }
 
-  Firebase.RTDB.setFloat(&fbdo, "now/CH4_1", CH4_1p);
-  Firebase.RTDB.setFloat(&fbdo, "now/CH4_2", CH4_2p);
-  Firebase.RTDB.setFloat(&fbdo, "now/gtsPresher", gtsPr);
-  Firebase.RTDB.setFloat(&fbdo, "now/kgyPresher", kgyPr);
-  Firebase.RTDB.setBool(&fbdo, "now/alarm", isAlarm);
-  Firebase.RTDB.setInt(&fbdo, "now/serverUnixTime20", getTime());
-
   if (Firebase.RTDB.getInt(&fbdo, "now/UnixTime")) {
     if (fbdo.dataTypeEnum() == firebase_rtdb_data_type_integer) {
       uint32_t lastSeen = (fbdo.to<int>());
@@ -1214,7 +1239,9 @@ void pushToFirebase() {
       }
     }
   }
+  Firebase.RTDB.setInt(&fbdo, "now/serverUnixTime20", getTime());
 }
+
 void firebaseReport() {
   // if (!checkValidData()) {
   //   return;
@@ -1261,10 +1288,16 @@ void firebaseReport() {
       Firebase.RTDB.setFloat(&fbdo, date + "/bearing2Temp", bearing2Temp);
     }
 
-    if (gasTemp < -40 || gasTemp > 900) {
-      Firebase.RTDB.setFloat(&fbdo, date + "/gasTemp", -255);
+    if (gasTempIN < -50 || gasTempIN > 900) {
+      Firebase.RTDB.setFloat(&fbdo, date + "/gasTempIN", -255);
     } else {
-      Firebase.RTDB.setFloat(&fbdo, date + "/gasTemp", gasTemp);
+      Firebase.RTDB.setFloat(&fbdo, date + "/gasTempIN", gasTempIN);
+    }
+
+    if (gasTempOUT < -50 || gasTempOUT > 900) {
+      Firebase.RTDB.setFloat(&fbdo, date + "/gasTempOUT", -255);
+    } else {
+      Firebase.RTDB.setFloat(&fbdo, date + "/gasTempOUT", gasTempOUT);
     }
 
     if (l1N > 600 || l1N < -10 || l2N > 600 || l2N < -10 || l3N > 600 || l3N < -10) {
